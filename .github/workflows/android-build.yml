@@ -1,4 +1,4 @@
-name: Android CI Build
+name: CI Build
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  android-build:
     runs-on: ubuntu-latest
 
     steps:
@@ -31,3 +31,23 @@ jobs:
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+
+  server-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: ./server
+        run: pip install -r requirements.txt
+
+      - name: Check server imports correctly
+        working-directory: ./server
+        run: python -c "import main; print('Server modules import OK')"
