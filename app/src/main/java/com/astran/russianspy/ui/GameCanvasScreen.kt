@@ -18,9 +18,9 @@ import com.astran.russianspy.model.Room
 import com.astran.russianspy.model.RoomFunction
 import kotlin.math.sqrt
 
-// cati pixeli pe ecran reprezinta 1 unitate din lumea jocului
-// numar mai mare = zoom mai apropiat = harta pare mai mare
 private const val TILE_SCALE = 2.2f
+private const val JOYSTICK_BASE_RADIUS = 100f
+private const val JOYSTICK_KNOB_RADIUS = 40f
 
 @Composable
 fun GameCanvasScreen(
@@ -31,6 +31,11 @@ fun GameCanvasScreen(
 
     var joystickDirX by remember { mutableStateOf(0f) }
     var joystickDirY by remember { mutableStateOf(0f) }
+
+    // pozitia unde a fost atins ecranul (centrul cercului de baza al joystick-ului)
+    // null = joystick-ul nu e activ momentan (degetul nu atinge ecranul)
+    var joystickOrigin by remember { mutableStateOf<Offset?>(null) }
+    var joystickKnob by remember { mutableStateOf<Offset?>(null) }
 
     val playerSpeed = 5f
     val playerRadius = 18f
@@ -47,11 +52,50 @@ fun GameCanvasScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { startPos ->
+                        // joystick-ul apare exact unde a fost pus degetul
+                        joystickOrigin = startPos
+                        joystickKnob = startPos
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        val origin = joystickOrigin ?: return@detectDragGestures
+                        val rawOffset = change.position - origin
+                        val distance = sqrt(rawOffset.x * rawOffset.x + rawOffset.y * rawOffset.y)
+                        val clampedOffset = if (distance > JOYSTICK_BASE_RADIUS) {
+                            Offset(
+                                rawOffset.x / distance * JOYSTICK_BASE_RADIUS,
+                                rawOffset.y / distance * JOYSTICK_BASE_RADIUS
+                            )
+                        } else {
+                            rawOffset
+                        }
+                        joystickKnob = origin + clampedOffset
+                        joystickDirX = clampedOffset.x / JOYSTICK_BASE_RADIUS
+                        joystickDirY = clampedOffset.y / JOYSTICK_BASE_RADIUS
+                    },
+                    onDragEnd = {
+                        joystickOrigin = null
+                        joystickKnob = null
+                        joystickDirX = 0f
+                        joystickDirY = 0f
+                    },
+                    onDragCancel = {
+                        joystickOrigin = null
+                        joystickKnob = null
+                        joystickDirX = 0f
+                        joystickDirY = 0f
+                    }
+                )
+            }
+    ) {
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            // camera centrata pe jucator: jucatorul e mereu in mijlocul ecranului,
-            // iar harta se deseneaza relativ la pozitia lui
             val screenCenterX = size.width / 2f
             val screenCenterY = size.height / 2f
 
@@ -61,7 +105,6 @@ fun GameCanvasScreen(
                 return Offset(screenCenterX + dx, screenCenterY + dy)
             }
 
-            // deseneaza doar camerele care ar putea fi vizibile pe ecran (optimizare simpla)
             val viewRangeWorld = maxOf(size.width, size.height) / TILE_SCALE
             BuildingLayout.rooms.forEach { room ->
                 val roomCenterDist = kotlin.math.hypot(room.centerX() - playerX, room.centerY() - playerY)
@@ -74,7 +117,6 @@ fun GameCanvasScreen(
                 drawRect(color = Color(0xFF000000), topLeft = topLeft, size = sizePx, style = Stroke(width = 3f))
             }
 
-            // jucatorul e mereu desenat exact in centrul ecranului
             drawCircle(
                 color = Color(0xFFFFD700),
                 radius = playerRadius * TILE_SCALE,
@@ -86,6 +128,22 @@ fun GameCanvasScreen(
                 center = Offset(screenCenterX, screenCenterY),
                 style = Stroke(width = 2f)
             )
+
+            // deseneaza joystick-ul doar daca degetul atinge ecranul
+            val origin = joystickOrigin
+            val knob = joystickKnob
+            if (origin != null && knob != null) {
+                drawCircle(
+                    color = Color(0x55FFFFFF),
+                    radius = JOYSTICK_BASE_RADIUS,
+                    center = origin
+                )
+                drawCircle(
+                    color = Color(0xCCFFFFFF),
+                    radius = JOYSTICK_KNOB_RADIUS,
+                    center = knob
+                )
+            }
         }
 
         Text(
@@ -94,16 +152,6 @@ fun GameCanvasScreen(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(16.dp)
-        )
-
-        VirtualJoystick(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(24.dp),
-            onDirectionChanged = { dx, dy ->
-                joystickDirX = dx
-                joystickDirY = dy
-            }
         )
     }
 }
@@ -133,53 +181,4 @@ private fun isWalkable(px: Float, py: Float, radius: Float): Boolean {
     if (px - radius < 0f || px + radius > BuildingLayout.MAP_WIDTH) return false
     if (py - radius < 0f || py + radius > BuildingLayout.MAP_HEIGHT) return false
     return BuildingLayout.rooms.any { it.containsPoint(px, py) }
-}
-
-@Composable
-private fun VirtualJoystick(
-    modifier: Modifier = Modifier,
-    onDirectionChanged: (Float, Float) -> Unit
-) {
-    val baseRadius = 70f
-    var knobOffset by remember { mutableStateOf(Offset.Zero) }
-
-    Box(
-        modifier = modifier
-            .size(140.dp)
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        val newOffset = knobOffset + dragAmount
-                        val distance = sqrt(newOffset.x * newOffset.x + newOffset.y * newOffset.y)
-                        knobOffset = if (distance > baseRadius) {
-                            Offset(newOffset.x / distance * baseRadius, newOffset.y / distance * baseRadius)
-                        } else {
-                            newOffset
-                        }
-                        onDirectionChanged(knobOffset.x / baseRadius, knobOffset.y / baseRadius)
-                    },
-                    onDragEnd = {
-                        knobOffset = Offset.Zero
-                        onDirectionChanged(0f, 0f)
-                    }
-                )
-            }
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawCircle(
-                color = Color(0x55FFFFFF),
-                radius = baseRadius,
-                center = Offset(size.width / 2f, size.height / 2f)
-            )
-            drawCircle(
-                color = Color(0xCCFFFFFF),
-                radius = 35f,
-                center = Offset(
-                    size.width / 2f + knobOffset.x,
-                    size.height / 2f + knobOffset.y
-                )
-            )
-        }
-    }
 }
