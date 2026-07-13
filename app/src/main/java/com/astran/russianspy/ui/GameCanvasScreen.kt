@@ -8,36 +8,36 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.astran.russianspy.data.BuildingLayout
 import com.astran.russianspy.model.Room
 import com.astran.russianspy.model.RoomFunction
-import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.sqrt
+
+// cati pixeli pe ecran reprezinta 1 unitate din lumea jocului
+// numar mai mare = zoom mai apropiat = harta pare mai mare
+private const val TILE_SCALE = 0.6f
 
 @Composable
 fun GameCanvasScreen(
     onEnterTask: (Room) -> Unit
 ) {
-    // pozitia jucatorului in coordonate lume (aceeasi scara ca BuildingLayout)
-    var playerX by remember { mutableStateOf(1000f) }
-    var playerY by remember { mutableStateOf(1200f) }
+    var playerX by remember { mutableStateOf(BuildingLayout.START_X) }
+    var playerY by remember { mutableStateOf(BuildingLayout.START_Y) }
 
-    // directia curenta a joystick-ului (-1..1 pe fiecare axa)
     var joystickDirX by remember { mutableStateOf(0f) }
     var joystickDirY by remember { mutableStateOf(0f) }
 
-    val playerSpeed = 6f
-    val playerRadius = 20f
+    val playerSpeed = 5f
+    val playerRadius = 18f
 
-    // bucla de miscare: la fiecare frame, mutam jucatorul in directia joystick-ului
     LaunchedEffect(Unit) {
         while (true) {
-            withFrameNanosCompat()
+            withFrameNanos { }
             if (joystickDirX != 0f || joystickDirY != 0f) {
                 val newX = playerX + joystickDirX * playerSpeed
                 val newY = playerY + joystickDirY * playerSpeed
@@ -50,45 +50,44 @@ fun GameCanvasScreen(
     Box(modifier = Modifier.fillMaxSize()) {
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val scaleX = size.width / BuildingLayout.MAP_WIDTH
-            val scaleY = size.height / BuildingLayout.MAP_HEIGHT
-            val scale = min(scaleX, scaleY)
-
-            // centram harta in canvas
-            val offsetX = (size.width - BuildingLayout.MAP_WIDTH * scale) / 2f
-            val offsetY = (size.height - BuildingLayout.MAP_HEIGHT * scale) / 2f
+            // camera centrata pe jucator: jucatorul e mereu in mijlocul ecranului,
+            // iar harta se deseneaza relativ la pozitia lui
+            val screenCenterX = size.width / 2f
+            val screenCenterY = size.height / 2f
 
             fun worldToScreen(wx: Float, wy: Float): Offset {
-                return Offset(offsetX + wx * scale, offsetY + wy * scale)
+                val dx = (wx - playerX) * TILE_SCALE
+                val dy = (wy - playerY) * TILE_SCALE
+                return Offset(screenCenterX + dx, screenCenterY + dy)
             }
 
-            // deseneaza toate camerele
+            // deseneaza doar camerele care ar putea fi vizibile pe ecran (optimizare simpla)
+            val viewRangeWorld = maxOf(size.width, size.height) / TILE_SCALE
             BuildingLayout.rooms.forEach { room ->
+                val roomCenterDist = kotlin.math.hypot(room.centerX() - playerX, room.centerY() - playerY)
+                if (roomCenterDist > viewRangeWorld) return@forEach
+
                 val topLeft = worldToScreen(room.x, room.y)
-                val color = roomColor(room)
-                drawRect(
-                    color = color,
-                    topLeft = topLeft,
-                    size = androidx.compose.ui.geometry.Size(room.width * scale, room.height * scale)
-                )
-                drawRect(
-                    color = Color(0xFF000000),
-                    topLeft = topLeft,
-                    size = androidx.compose.ui.geometry.Size(room.width * scale, room.height * scale),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
-                )
+                val sizePx = Size(room.width * TILE_SCALE, room.height * TILE_SCALE)
+
+                drawRect(color = roomColor(room), topLeft = topLeft, size = sizePx)
+                drawRect(color = Color(0xFF000000), topLeft = topLeft, size = sizePx, style = Stroke(width = 3f))
             }
 
-            // deseneaza jucatorul (doar daca e vizibil - fara linie de vedere inca, adaugam la pasul urmator)
-            val playerScreen = worldToScreen(playerX, playerY)
+            // jucatorul e mereu desenat exact in centrul ecranului
             drawCircle(
                 color = Color(0xFFFFD700),
-                radius = playerRadius * scale,
-                center = playerScreen
+                radius = playerRadius * TILE_SCALE,
+                center = Offset(screenCenterX, screenCenterY)
+            )
+            drawCircle(
+                color = Color(0xFF000000),
+                radius = playerRadius * TILE_SCALE,
+                center = Offset(screenCenterX, screenCenterY),
+                style = Stroke(width = 2f)
             )
         }
 
-        // numele camerelor, afisate ca text peste canvas (simplu, fara scalare complexa inca)
         Text(
             text = currentRoomName(playerX, playerY),
             color = Color.White,
@@ -97,7 +96,6 @@ fun GameCanvasScreen(
                 .padding(16.dp)
         )
 
-        // Joystick virtual, jos-stanga
         VirtualJoystick(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -131,7 +129,6 @@ private fun currentRoomName(px: Float, py: Float): String {
     return room?.name?.takeIf { it.isNotBlank() } ?: ""
 }
 
-// verifica daca punctul e in interiorul vreunei camere/coridor (nu poti iesi din cladire)
 private fun isWalkable(px: Float, py: Float, radius: Float): Boolean {
     if (px - radius < 0f || px + radius > BuildingLayout.MAP_WIDTH) return false
     if (py - radius < 0f || py + radius > BuildingLayout.MAP_HEIGHT) return false
@@ -173,20 +170,16 @@ private fun VirtualJoystick(
             drawCircle(
                 color = Color(0x55FFFFFF),
                 radius = baseRadius,
-                center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                center = Offset(size.width / 2f, size.height / 2f)
             )
             drawCircle(
                 color = Color(0xCCFFFFFF),
                 radius = 35f,
-                center = androidx.compose.ui.geometry.Offset(
+                center = Offset(
                     size.width / 2f + knobOffset.x,
                     size.height / 2f + knobOffset.y
                 )
             )
         }
     }
-}
-
-private suspend fun withFrameNanosCompat() {
-    androidx.compose.runtime.withFrameNanos { }
 }
