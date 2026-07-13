@@ -20,7 +20,7 @@ import kotlin.math.sqrt
 
 // cati pixeli pe ecran reprezinta 1 unitate din lumea jocului
 // numar mai mare = zoom mai apropiat = harta pare mai mare
-private const val TILE_SCALE = 0.6f
+private const val TILE_SCALE = 2.2f
 
 @Composable
 fun GameCanvasScreen(
