@@ -12,7 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.astran.russianspy.model.RoomFunction
-import com.astran.russianspy.ui.GameMapScreen
+import com.astran.russianspy.ui.GameCanvasScreen
 import com.astran.russianspy.ui.LobbyScreen
 import com.astran.russianspy.ui.tasks.SurveillanceScreen
 import com.astran.russianspy.viewmodel.GameViewModel
@@ -34,8 +34,7 @@ fun RussianSpyNavGraph() {
         }
 
         composable(Routes.GAME_MAP) {
-            GameMapScreen(
-                viewModel = gameViewModel,
+            GameCanvasScreen(
                 onEnterTask = { room ->
                     when (room.function) {
                         RoomFunction.SURVEILLANCE -> navController.navigate(Routes.SURVEILLANCE_TASK)
