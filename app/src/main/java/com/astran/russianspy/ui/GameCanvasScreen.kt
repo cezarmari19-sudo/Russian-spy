@@ -32,8 +32,6 @@ fun GameCanvasScreen(
     var joystickDirX by remember { mutableStateOf(0f) }
     var joystickDirY by remember { mutableStateOf(0f) }
 
-    // pozitia unde a fost atins ecranul (centrul cercului de baza al joystick-ului)
-    // null = joystick-ul nu e activ momentan (degetul nu atinge ecranul)
     var joystickOrigin by remember { mutableStateOf<Offset?>(null) }
     var joystickKnob by remember { mutableStateOf<Offset?>(null) }
 
@@ -58,7 +56,6 @@ fun GameCanvasScreen(
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { startPos ->
-                        // joystick-ul apare exact unde a fost pus degetul
                         joystickOrigin = startPos
                         joystickKnob = startPos
                     },
@@ -96,6 +93,8 @@ fun GameCanvasScreen(
     ) {
 
         Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRect(color = Color.Black, topLeft = Offset.Zero, size = size)
+
             val screenCenterX = size.width / 2f
             val screenCenterY = size.height / 2f
 
@@ -129,7 +128,6 @@ fun GameCanvasScreen(
                 style = Stroke(width = 2f)
             )
 
-            // deseneaza joystick-ul doar daca degetul atinge ecranul
             val origin = joystickOrigin
             val knob = joystickKnob
             if (origin != null && knob != null) {
