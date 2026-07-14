@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
  * - Daca il faci deploy pe Render/Railway: domeniul de acolo (ex: "russian-spy.onrender.com"), si schimbi "ws://" -> "wss://" si "http://" -> "https://"
  */
 object ServerConfig {
-    const val HOST = "127.0.0.1"
+    const val HOST = "192.168.1.7"
     const val PORT = 8000
     const val HTTP_BASE = "http://$HOST:$PORT"
     const val WS_BASE = "ws://$HOST:$PORT"
