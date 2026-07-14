@@ -8,16 +8,12 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * IMPORTANT: schimba aici adresa serverului tau.
- * - Daca rulezi serverul pe acelasi telefon si testezi pe acelasi telefon: "127.0.0.1"
- * - Daca serverul ruleaza pe alt dispozitiv din aceeasi retea WiFi: IP-ul local al aceluia (ex: "192.168.1.23")
- * - Daca il faci deploy pe Render/Railway: domeniul de acolo (ex: "russian-spy.onrender.com"), si schimbi "ws://" -> "wss://" si "http://" -> "https://"
+ * Serverul ruleaza pe Render (deploy permanent, nu mai e nevoie de Termux/IP local).
+ * Daca refaci deploy-ul cu alt nume de serviciu, actualizeaza aici domeniul nou.
  */
 object ServerConfig {
-    const val HOST = "192.168.1.7"
-    const val PORT = 8000
-    const val HTTP_BASE = "http://$HOST:$PORT"
-    const val WS_BASE = "ws://$HOST:$PORT"
+    const val HTTP_BASE = "https://russian-spy-32q1.onrender.com"
+    const val WS_BASE = "wss://russian-spy-32q1.onrender.com"
 }
 
 sealed class ServerEvent {
