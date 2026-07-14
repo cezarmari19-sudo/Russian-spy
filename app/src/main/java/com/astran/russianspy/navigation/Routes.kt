@@ -2,6 +2,7 @@ package com.astran.russianspy.navigation
 
 object Routes {
     const val LOBBY = "lobby"
+    const val WAITING_ROOM = "waiting_room"
     const val ROLE_REVEAL = "role_reveal"
     const val GAME_MAP = "game_map"
     const val SURVEILLANCE_TASK = "surveillance_task"
