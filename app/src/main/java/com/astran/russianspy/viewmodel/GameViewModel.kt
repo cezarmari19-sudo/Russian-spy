@@ -3,12 +3,18 @@ package com.astran.russianspy.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.State
 import com.astran.russianspy.data.BuildingLayout
+import com.astran.russianspy.model.GamePhase
 import com.astran.russianspy.model.GameState
 import com.astran.russianspy.model.Player
+import com.astran.russianspy.model.Role
 import com.astran.russianspy.model.SurveillanceEvent
 import com.astran.russianspy.model.SurveillanceEventType
+import com.astran.russianspy.network.LobbyPlayerInfo
+import com.astran.russianspy.network.NetworkClient
+import com.astran.russianspy.network.ServerEvent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -21,6 +27,12 @@ class GameViewModel : ViewModel() {
     private val _localPlayerId = mutableStateOf("")
     val localPlayerId: State<String> = _localPlayerId
 
+    private val _localPlayerName = mutableStateOf("")
+    val localPlayerName: State<String> = _localPlayerName
+
+    private val _isHost = mutableStateOf(false)
+    val isHost: State<Boolean> = _isHost
+
     private val _errorMessage = mutableStateOf<String?>(null)
     val errorMessage: State<String?> = _errorMessage
 
@@ -30,24 +42,70 @@ class GameViewModel : ViewModel() {
     private val _currentRoomId = mutableStateOf("entrance")
     val currentRoomId: State<String> = _currentRoomId
 
+    // Lista de jucatori din lobby-ul de asteptare (inainte sa inceapa jocul)
+    val lobbyPlayers = mutableStateListOf<LobbyPlayerInfo>()
+
+    private val _gameStarted = mutableStateOf(false)
+    val gameStarted: State<Boolean> = _gameStarted
+
+    private val _myRole = mutableStateOf<Role?>(null)
+    val myRole: State<Role?> = _myRole
+
+    private var networkClient: NetworkClient? = null
+
     fun createRoom(playerName: String) {
-        val roomCode = generateRoomCode()
         val playerId = generatePlayerId()
-
-        val hostPlayer = Player(id = playerId, name = playerName, currentRoomId = "entrance")
-
-        _gameState.value = GameState(
-            roomCode = roomCode,
-            players = mutableListOf(hostPlayer),
-            rooms = BuildingLayout.rooms.toMutableList()
-        )
         _localPlayerId.value = playerId
-        _currentRoomId.value = "entrance"
+        _localPlayerName.value = playerName
         _errorMessage.value = null
+
+        val client = NetworkClient(onEvent = ::handleServerEvent)
+        networkClient = client
+
+        client.createRoom(playerId, playerName) { roomCode, error ->
+            if (error != null || roomCode == null) {
+                _errorMessage.value = error ?: "Eroare necunoscuta la crearea camerei"
+                return@createRoom
+            }
+            _isHost.value = true
+            _gameState.value = GameState(
+                roomCode = roomCode,
+                players = mutableListOf(Player(id = playerId, name = playerName, currentRoomId = "entrance")),
+                rooms = BuildingLayout.rooms.toMutableList()
+            )
+            _currentRoomId.value = "entrance"
+            client.connectWebSocket(roomCode, playerId)
+        }
     }
 
     fun joinRoom(playerName: String, roomCode: String) {
-        _errorMessage.value = "Functia de intrare in camera existenta necesita server (nu e conectat inca)"
+        val playerId = generatePlayerId()
+        _localPlayerId.value = playerId
+        _localPlayerName.value = playerName
+        _errorMessage.value = null
+
+        val client = NetworkClient(onEvent = ::handleServerEvent)
+        networkClient = client
+
+        client.joinRoom(playerId, playerName, roomCode) { success, error ->
+            if (!success) {
+                _errorMessage.value = error ?: "Nu m-am putut alatura camerei"
+                return@joinRoom
+            }
+            _isHost.value = false
+            _gameState.value = GameState(
+                roomCode = roomCode,
+                players = mutableListOf(Player(id = playerId, name = playerName, currentRoomId = "entrance")),
+                rooms = BuildingLayout.rooms.toMutableList()
+            )
+            _currentRoomId.value = "entrance"
+            client.connectWebSocket(roomCode, playerId)
+        }
+    }
+
+    /** Apelat de host cand apasa butonul Start din lobby-ul de asteptare. */
+    fun startGame() {
+        networkClient?.sendStartGame()
     }
 
     fun clearError() {
@@ -59,6 +117,7 @@ class GameViewModel : ViewModel() {
         val state = _gameState.value ?: return
         val player = state.players.find { it.id == _localPlayerId.value } ?: return
         player.currentRoomId = roomId
+        networkClient?.sendMove(roomId)
     }
 
     fun spySendsIntel(fromRoomId: String) {
@@ -69,6 +128,7 @@ class GameViewModel : ViewModel() {
             relatedRoomId = fromRoomId
         )
         _activeSurveillanceEvent.value = event
+        networkClient?.sendSpyIntel()
 
         viewModelScope.launch {
             delay(4000L)
@@ -78,9 +138,52 @@ class GameViewModel : ViewModel() {
         }
     }
 
-    private fun generateRoomCode(): String {
-        val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-        return (1..5).map { chars[Random.nextInt(chars.length)] }.joinToString("")
+    private fun handleServerEvent(event: ServerEvent) {
+        when (event) {
+            is ServerEvent.LobbyUpdate -> {
+                lobbyPlayers.clear()
+                lobbyPlayers.addAll(event.players)
+            }
+            is ServerEvent.GameStarted -> {
+                _myRole.value = if (event.yourRole == "RUSSIAN_SPY") Role.RUSSIAN_SPY else Role.FBI_AGENT
+                _gameState.value?.phase = GamePhase.IN_PROGRESS
+                _gameStarted.value = true
+            }
+            is ServerEvent.PlayerMoved -> {
+                val state = _gameState.value ?: return
+                val player = state.players.find { it.id == event.playerId }
+                player?.currentRoomId = event.targetRoomId
+            }
+            is ServerEvent.PlayerDisconnected -> {
+                val state = _gameState.value ?: return
+                state.players.find { it.id == event.playerId }?.let {
+                    // marcam ca deconectat; ramane vizibil in istoric daca vrei sa-l afisezi altfel
+                }
+            }
+            is ServerEvent.SurveillanceEvent -> {
+                val evt = SurveillanceEvent(
+                    id = "evt_remote_${Random.nextLong()}",
+                    type = SurveillanceEventType.SPY_SENDING_INTEL,
+                    timestampMillis = System.currentTimeMillis(),
+                    relatedRoomId = event.fromRoomId
+                )
+                _activeSurveillanceEvent.value = evt
+                viewModelScope.launch {
+                    delay(4000L)
+                    if (_activeSurveillanceEvent.value?.id == evt.id) {
+                        _activeSurveillanceEvent.value = null
+                    }
+                }
+            }
+            is ServerEvent.Error -> {
+                _errorMessage.value = event.message
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        networkClient?.disconnect()
     }
 
     private fun generatePlayerId(): String {
