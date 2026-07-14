@@ -18,7 +18,7 @@ BUILDING_LAYOUT = [
     Room("office2", "Birouri 2", RoomFunction.OFFICE, 3, 2),
 ]
 
-MIN_PLAYERS = 4
+MIN_PLAYERS = 1
 MAX_PLAYERS = 15
 
 
