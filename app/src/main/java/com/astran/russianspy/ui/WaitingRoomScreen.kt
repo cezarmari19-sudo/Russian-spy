@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.astran.russianspy.viewmodel.GameViewModel
 
-private const val MIN_PLAYERS = 4
+private const val MIN_PLAYERS = 1
 private const val MAX_PLAYERS = 15
 
 @Composable
