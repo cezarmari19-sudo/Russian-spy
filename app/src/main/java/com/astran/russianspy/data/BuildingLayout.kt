@@ -25,6 +25,7 @@ object BuildingLayout {
 
         Room("forensics", "Laborator Criminalistic", RoomFunction.FORENSICS_LAB, x = 400f, y = 500f, width = 350f, height = 250f),
         Room("hall_forensics", "", RoomFunction.HALLWAY, x = 500f, y = 750f, width = 100f, height = 350f),
+        Room("hall_lab_armory", "", RoomFunction.HALLWAY, x = 750f, y = 550f, width = 2150f, height = 150f),
 
         Room("server_room", "Camera Servere", RoomFunction.SERVER_ROOM, x = 2900f, y = 1100f, width = 300f, height = 250f),
         Room("hall_server", "", RoomFunction.HALLWAY, x = 3000f, y = 1350f, width = 100f, height = 700f),
