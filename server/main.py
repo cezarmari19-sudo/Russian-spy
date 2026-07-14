@@ -35,6 +35,20 @@ async def broadcast_to_room(room_code: str, message: dict, exclude_player_id: st
             pass
 
 
+async def broadcast_lobby_update(room_code: str):
+    room = game_manager.get_room(room_code)
+    if room is None:
+        return
+    players_payload = [
+        {"id": p.id, "name": p.name, "connected": p.connected}
+        for p in room.players.values()
+    ]
+    await broadcast_to_room(room_code, {
+        "type": "lobby_update",
+        "players": players_payload
+    })
+
+
 @app.websocket("/ws/{room_code}/{player_id}")
 async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: str):
     await websocket.accept()
@@ -42,6 +56,9 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
     if room_code not in active_connections:
         active_connections[room_code] = {}
     active_connections[room_code][player_id] = websocket
+
+    # la conectare, anuntam pe toti (inclusiv pe cel nou) starea curenta a lobby-ului
+    await broadcast_lobby_update(room_code)
 
     try:
         while True:
@@ -98,6 +115,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
             "type": "player_disconnected",
             "playerId": player_id
         })
+        await broadcast_lobby_update(room_code)
 
 
 @app.post("/create_room")
