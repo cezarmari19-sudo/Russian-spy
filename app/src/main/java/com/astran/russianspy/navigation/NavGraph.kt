@@ -14,6 +14,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.astran.russianspy.model.RoomFunction
 import com.astran.russianspy.ui.GameCanvasScreen
 import com.astran.russianspy.ui.LobbyScreen
+import com.astran.russianspy.ui.WaitingRoomScreen
 import com.astran.russianspy.ui.tasks.SurveillanceScreen
 import com.astran.russianspy.viewmodel.GameViewModel
 
@@ -28,7 +29,18 @@ fun RussianSpyNavGraph() {
             LobbyScreen(
                 viewModel = gameViewModel,
                 onRoomReady = {
-                    navController.navigate(Routes.GAME_MAP)
+                    navController.navigate(Routes.WAITING_ROOM)
+                }
+            )
+        }
+
+        composable(Routes.WAITING_ROOM) {
+            WaitingRoomScreen(
+                viewModel = gameViewModel,
+                onGameStarted = {
+                    navController.navigate(Routes.GAME_MAP) {
+                        popUpTo(Routes.LOBBY) { inclusive = true }
+                    }
                 }
             )
         }
