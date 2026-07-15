@@ -7,10 +7,6 @@ import okhttp3.*
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-/**
- * Serverul ruleaza pe Render (deploy permanent, nu mai e nevoie de Termux/IP local).
- * Daca refaci deploy-ul cu alt nume de serviciu, actualizeaza aici domeniul nou.
- */
 object ServerConfig {
     const val HTTP_BASE = "https://russian-spy-32q1.onrender.com"
     const val WS_BASE = "wss://russian-spy-32q1.onrender.com"
@@ -18,7 +14,8 @@ object ServerConfig {
 
 sealed class ServerEvent {
     data class PlayerMoved(val playerId: String, val targetRoomId: String) : ServerEvent()
-    data class PositionsSnapshot(val positions: Map<String, String>) : ServerEvent()
+    data class PositionUpdate(val playerId: String, val x: Float, val y: Float) : ServerEvent()
+    data class PositionsSnapshot(val positions: List<PlayerPositionInfo>) : ServerEvent()
     data class GameStarted(val yourRole: String) : ServerEvent()
     data class SurveillanceEvent(val eventType: String, val fromRoomId: String) : ServerEvent()
     data class PlayerDisconnected(val playerId: String) : ServerEvent()
@@ -32,16 +29,22 @@ data class LobbyPlayerInfo(
     val connected: Boolean
 )
 
+data class PlayerPositionInfo(
+    val playerId: String,
+    val roomId: String,
+    val x: Float?,
+    val y: Float?
+)
+
 class NetworkClient(
     private val onEvent: (ServerEvent) -> Unit
 ) {
     private val client = OkHttpClient.Builder()
-        .readTimeout(0, TimeUnit.MILLISECONDS) // conexiune persistenta pentru WebSocket
+        .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
     private var webSocket: WebSocket? = null
 
-    /** Creeaza o camera noua pe server. Returneaza codul camerei prin callback, sau null la eroare. */
     fun createRoom(playerId: String, playerName: String, onResult: (roomCode: String?, error: String?) -> Unit) {
         val url = "${ServerConfig.HTTP_BASE}/create_room?player_id=$playerId&player_name=${playerName}"
         val request = Request.Builder().url(url).post(RequestBody.create(null, ByteArray(0))).build()
@@ -66,7 +69,6 @@ class NetworkClient(
         })
     }
 
-    /** Intra intr-o camera existenta pe server. */
     fun joinRoom(playerId: String, playerName: String, roomCode: String, onResult: (success: Boolean, error: String?) -> Unit) {
         val url = "${ServerConfig.HTTP_BASE}/join_room?room_code=$roomCode&player_id=$playerId&player_name=${playerName}"
         val request = Request.Builder().url(url).post(RequestBody.create(null, ByteArray(0))).build()
@@ -91,7 +93,6 @@ class NetworkClient(
         })
     }
 
-    /** Deschide conexiunea WebSocket pentru camera si jucatorul dati. Trebuie apelat dupa create/join. */
     fun connectWebSocket(roomCode: String, playerId: String) {
         val url = "${ServerConfig.WS_BASE}/ws/$roomCode/$playerId"
         val request = Request.Builder().url(url).build()
@@ -115,14 +116,25 @@ class NetworkClient(
                     targetRoomId = json.getString("targetRoomId")
                 )
             )
+            "position_update" -> onEvent(
+                ServerEvent.PositionUpdate(
+                    playerId = json.getString("playerId"),
+                    x = json.getDouble("x").toFloat(),
+                    y = json.getDouble("y").toFloat()
+                )
+            )
             "positions_snapshot" -> {
                 val arr = json.getJSONArray("positions")
-                val map = mutableMapOf<String, String>()
-                for (i in 0 until arr.length()) {
+                val list = (0 until arr.length()).map { i ->
                     val entry = arr.getJSONObject(i)
-                    map[entry.getString("playerId")] = entry.getString("roomId")
+                    PlayerPositionInfo(
+                        playerId = entry.getString("playerId"),
+                        roomId = entry.optString("roomId", ""),
+                        x = if (entry.isNull("x")) null else entry.getDouble("x").toFloat(),
+                        y = if (entry.isNull("y")) null else entry.getDouble("y").toFloat()
+                    )
                 }
-                onEvent(ServerEvent.PositionsSnapshot(map))
+                onEvent(ServerEvent.PositionsSnapshot(list))
             }
             "game_started" -> onEvent(
                 ServerEvent.GameStarted(yourRole = json.getString("yourRole"))
@@ -156,6 +168,14 @@ class NetworkClient(
         send(JSONObject().apply {
             put("action", "move")
             put("targetRoomId", targetRoomId)
+        })
+    }
+
+    fun sendPositionUpdate(x: Float, y: Float) {
+        send(JSONObject().apply {
+            put("action", "position_update")
+            put("x", x)
+            put("y", y)
         })
     }
 
