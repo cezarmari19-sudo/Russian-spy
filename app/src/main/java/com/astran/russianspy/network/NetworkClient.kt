@@ -18,6 +18,7 @@ object ServerConfig {
 
 sealed class ServerEvent {
     data class PlayerMoved(val playerId: String, val targetRoomId: String) : ServerEvent()
+    data class PositionsSnapshot(val positions: Map<String, String>) : ServerEvent()
     data class GameStarted(val yourRole: String) : ServerEvent()
     data class SurveillanceEvent(val eventType: String, val fromRoomId: String) : ServerEvent()
     data class PlayerDisconnected(val playerId: String) : ServerEvent()
@@ -114,6 +115,15 @@ class NetworkClient(
                     targetRoomId = json.getString("targetRoomId")
                 )
             )
+            "positions_snapshot" -> {
+                val arr = json.getJSONArray("positions")
+                val map = mutableMapOf<String, String>()
+                for (i in 0 until arr.length()) {
+                    val entry = arr.getJSONObject(i)
+                    map[entry.getString("playerId")] = entry.getString("roomId")
+                }
+                onEvent(ServerEvent.PositionsSnapshot(map))
+            }
             "game_started" -> onEvent(
                 ServerEvent.GameStarted(yourRole = json.getString("yourRole"))
             )
