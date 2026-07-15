@@ -46,6 +46,21 @@ class GameViewModel : ViewModel() {
     private val _currentRoomId = mutableStateOf("entrance")
     val currentRoomId: State<String> = _currentRoomId
 
+    // Pozitia LOCALA a jucatorului curent (X/Y in coordonate "world"), tinuta aici
+    // (nu in GameCanvasScreen cu "remember") ca sa SUPRAVIETUIASCA navigarii catre alte
+    // ecrane (ex: camerele de supraveghere). Altfel Compose distruge starea ecranului
+    // la navigare si jucatorul reapare la pozitia de start cand se intoarce pe harta.
+    private val _localPlayerX = mutableStateOf(BuildingLayout.START_X)
+    val localPlayerX: State<Float> = _localPlayerX
+
+    private val _localPlayerY = mutableStateOf(BuildingLayout.START_Y)
+    val localPlayerY: State<Float> = _localPlayerY
+
+    fun setLocalPlayerPosition(x: Float, y: Float) {
+        _localPlayerX.value = x
+        _localPlayerY.value = y
+    }
+
     val lobbyPlayers = mutableStateListOf<LobbyPlayerInfo>()
 
     // Pozitiile LIVE (roomId + x + y exacte) ale tuturor jucatorilor. Folosit de monitoarele de supraveghere.
