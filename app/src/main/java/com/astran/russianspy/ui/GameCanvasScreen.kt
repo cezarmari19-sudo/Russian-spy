@@ -39,8 +39,11 @@ fun GameCanvasScreen(
     onEnterTask: (Room) -> Unit,
     onOpenSurveillanceMonitors: () -> Unit
 ) {
-    var playerX by remember { mutableStateOf(BuildingLayout.START_X) }
-    var playerY by remember { mutableStateOf(BuildingLayout.START_Y) }
+    // Pozitia jucatorului e tinuta in GameViewModel (nu in "remember" local), ca sa
+    // supravietuiasca navigarii catre alte ecrane (ex: camerele de supraveghere) si sa
+    // nu te "teleporteze" inapoi la pozitia de start cand te intorci pe harta.
+    var playerX by remember { mutableStateOf(viewModel.localPlayerX.value) }
+    var playerY by remember { mutableStateOf(viewModel.localPlayerY.value) }
 
     var joystickDirX by remember { mutableStateOf(0f) }
     var joystickDirY by remember { mutableStateOf(0f) }
@@ -67,6 +70,10 @@ fun GameCanvasScreen(
                 val newY = playerY + joystickDirY * playerSpeed
                 if (isWalkable(newX, playerY, playerRadius)) playerX = newX
                 if (isWalkable(playerX, newY, playerRadius)) playerY = newY
+
+                // Salvam pozitia in ViewModel la fiecare cadru de miscare, ca sa fie
+                // mereu actualizata daca jucatorul navigheaza brusc catre alt ecran.
+                viewModel.setLocalPlayerPosition(playerX, playerY)
 
                 val room = BuildingLayout.getRoomAtPoint(playerX, playerY)
                 val newRoomId = room?.id ?: ""
