@@ -227,4 +227,59 @@ fun GameCanvasScreen(
                 .padding(16.dp)
         )
 
-        // Buton "Camere", vizibil doar c
+        // Buton "Camere", vizibil doar cand jucatorul e in camera de supraveghere.
+        if (currentRoomIdLocal == "surveillance") {
+            Button(
+                onClick = onOpenSurveillanceMonitors,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(24.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            ) {
+                Text("📹 Camere")
+            }
+        }
+    }
+}
+
+private fun roomColor(room: Room): Color {
+    return when (room.function) {
+        RoomFunction.HALLWAY -> Color(0xFF2A2A2A)
+        RoomFunction.HUB -> Color(0xFF3A3A3A)
+        RoomFunction.ENTRANCE -> Color(0xFF455A64)
+        RoomFunction.SURVEILLANCE -> Color(0xFF4A148C)
+        RoomFunction.FORENSICS_LAB -> Color(0xFF01579B)
+        RoomFunction.ARMORY -> Color(0xFF880E4F)
+        RoomFunction.SERVER_ROOM -> Color(0xFF1B5E20)
+        RoomFunction.OFFICE -> Color(0xFF37474F)
+        RoomFunction.BREAK_ROOM -> Color(0xFF5D4037)
+        RoomFunction.COMMS_MONITOR -> Color(0xFF827717)
+        RoomFunction.MEETING_ROOM -> Color(0xFFB71C1C)
+    }
+}
+
+private fun currentRoomName(px: Float, py: Float): String {
+    val room = BuildingLayout.getRoomAtPoint(px, py)
+    return room?.name?.takeIf { it.isNotBlank() } ?: ""
+}
+
+private fun isWalkable(px: Float, py: Float, radius: Float): Boolean {
+    if (px - radius < 0f || px + radius > BuildingLayout.MAP_WIDTH) return false
+    if (py - radius < 0f || py + radius > BuildingLayout.MAP_HEIGHT) return false
+
+    val samplePoints = 8
+    for (i in 0 until samplePoints) {
+        val angle = (2.0 * Math.PI * i / samplePoints)
+        val sampleX = px + radius * cos(angle).toFloat()
+        val sampleY = py + radius * sin(angle).toFloat()
+        if (BuildingLayout.rooms.none { it.containsPoint(sampleX, sampleY) }) {
+            return false
+        }
+    }
+    return BuildingLayout.rooms.any { it.containsPoint(px, py) }
+}
+
+// Sistemul de vizibilitate (raycasting: WallSegment, buildWallSegmentsFromMergedRooms,
+// computeVisibilityPolygon, VIEW_RADIUS) e definit in Visibility.kt, ca sa fie
+// folosit identic si de camerele de supraveghere (SurveillanceMonitorsScreen).
