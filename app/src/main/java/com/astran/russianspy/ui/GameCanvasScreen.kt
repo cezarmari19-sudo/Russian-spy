@@ -3,10 +3,14 @@ package com.astran.russianspy.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -18,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.astran.russianspy.data.BuildingLayout
 import com.astran.russianspy.model.Room
 import com.astran.russianspy.model.RoomFunction
+import com.astran.russianspy.viewmodel.GameViewModel
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -30,7 +35,9 @@ private const val VIEW_RADIUS = 420f // raza de vizibilitate in unitati "world",
 
 @Composable
 fun GameCanvasScreen(
-    onEnterTask: (Room) -> Unit
+    viewModel: GameViewModel,
+    onEnterTask: (Room) -> Unit,
+    onOpenSurveillanceMonitors: () -> Unit
 ) {
     var playerX by remember { mutableStateOf(BuildingLayout.START_X) }
     var playerY by remember { mutableStateOf(BuildingLayout.START_Y) }
@@ -49,6 +56,8 @@ fun GameCanvasScreen(
     // si linii de perete gresite intre camere adiacente).
     val wallSegments = remember { buildWallSegmentsFromMergedRooms(BuildingLayout.rooms) }
 
+    var currentRoomIdLocal by remember { mutableStateOf("") }
+
     LaunchedEffect(Unit) {
         while (true) {
             withFrameNanos { }
@@ -57,6 +66,15 @@ fun GameCanvasScreen(
                 val newY = playerY + joystickDirY * playerSpeed
                 if (isWalkable(newX, playerY, playerRadius)) playerX = newX
                 if (isWalkable(playerX, newY, playerRadius)) playerY = newY
+
+                val room = BuildingLayout.getRoomAtPoint(playerX, playerY)
+                val newRoomId = room?.id ?: ""
+                if (newRoomId != currentRoomIdLocal) {
+                    currentRoomIdLocal = newRoomId
+                    if (newRoomId.isNotEmpty()) {
+                        viewModel.moveToRoom(newRoomId)
+                    }
+                }
             }
         }
     }
@@ -194,6 +212,20 @@ fun GameCanvasScreen(
                 .align(Alignment.TopCenter)
                 .padding(16.dp)
         )
+
+        // Buton "Camere", vizibil doar cand jucatorul e in camera de supraveghere.
+        if (currentRoomIdLocal == "surveillance") {
+            Button(
+                onClick = onOpenSurveillanceMonitors,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(24.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            ) {
+                Text("📹 Camere")
+            }
+        }
     }
 }
 
