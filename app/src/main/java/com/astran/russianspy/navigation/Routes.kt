@@ -6,6 +6,7 @@ object Routes {
     const val ROLE_REVEAL = "role_reveal"
     const val GAME_MAP = "game_map"
     const val SURVEILLANCE_TASK = "surveillance_task"
+    const val SURVEILLANCE_MONITORS = "surveillance_monitors"
     const val FORENSICS_TASK = "forensics_task"
     const val PHONE_TASK = "phone_task"
     const val PLANT_BOMB_TASK = "plant_bomb_task"
