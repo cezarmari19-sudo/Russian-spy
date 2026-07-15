@@ -14,6 +14,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.astran.russianspy.model.RoomFunction
 import com.astran.russianspy.ui.GameCanvasScreen
 import com.astran.russianspy.ui.LobbyScreen
+import com.astran.russianspy.ui.SurveillanceMonitorsScreen
 import com.astran.russianspy.ui.WaitingRoomScreen
 import com.astran.russianspy.ui.tasks.SurveillanceScreen
 import com.astran.russianspy.viewmodel.GameViewModel
@@ -47,13 +48,24 @@ fun RussianSpyNavGraph() {
 
         composable(Routes.GAME_MAP) {
             GameCanvasScreen(
+                viewModel = gameViewModel,
                 onEnterTask = { room ->
                     when (room.function) {
                         RoomFunction.SURVEILLANCE -> navController.navigate(Routes.SURVEILLANCE_TASK)
                         RoomFunction.FORENSICS_LAB -> navController.navigate(Routes.FORENSICS_TASK)
                         else -> { /* camera fara task momentan */ }
                     }
+                },
+                onOpenSurveillanceMonitors = {
+                    navController.navigate(Routes.SURVEILLANCE_MONITORS)
                 }
+            )
+        }
+
+        composable(Routes.SURVEILLANCE_MONITORS) {
+            SurveillanceMonitorsScreen(
+                viewModel = gameViewModel,
+                onExit = { navController.popBackStack() }
             )
         }
 
