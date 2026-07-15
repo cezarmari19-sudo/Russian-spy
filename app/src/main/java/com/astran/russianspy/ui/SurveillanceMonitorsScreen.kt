@@ -28,11 +28,6 @@ private val MONITORED_ROOMS = listOf(
     "server_room" to "Camera Servere"
 )
 
-// Marja (in unitati de lume) adaugata in jurul camerei monitorizate, ca sa se
-// vada putin din pragul usii / holul adiacent, fara sa arate camere vecine intregi
-// (stil Among Us: fiecare monitor arata DOAR camera respectiva, nu jumatate de harta).
-private const val MONITOR_VIEW_MARGIN = 60f
-
 @Composable
 fun SurveillanceMonitorsScreen(
     viewModel: GameViewModel,
@@ -126,17 +121,13 @@ private fun MonitorPanel(
         val centerX = room.centerX()
         val centerY = room.centerY()
 
-        // Fereastra de vizualizare = doar camera monitorizata + o mica marja,
-        // NU o raza mare care prinde jumatate din harta.
-        val viewWidth = room.width + MONITOR_VIEW_MARGIN * 2f
-        val viewHeight = room.height + MONITOR_VIEW_MARGIN * 2f
-
         // Doar jucatorii aflati EFECTIV in camera supravegheata, cu pozitia lor exacta X/Y.
         val playersHere = playerLivePositions.values.filter { it.roomId == roomId }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            // Scala aleasa astfel incat camera + marja sa umple ecranul (zoom stil Among Us).
-            val scale = minOf(size.width / viewWidth, size.height / viewHeight)
+            // Camera monitorizata umple TOT ecranul monitorului. Nu se mai deseneaza
+            // nicio camera/hol vecin - stil Among Us: fiecare monitor = un singur cadru curat.
+            val scale = minOf(size.width / room.width, size.height / room.height)
 
             fun worldToScreen(wx: Float, wy: Float): Offset {
                 val dx = (wx - centerX) * scale
@@ -144,29 +135,12 @@ private fun MonitorPanel(
                 return Offset(size.width / 2f + dx, size.height / 2f + dy)
             }
 
-            BuildingLayout.rooms.forEach { r ->
-                val topLeft = worldToScreen(r.x, r.y)
-                val sizePx = Size(r.width * scale, r.height * scale)
-
-                // Sarim peste camerele care nu se suprapun deloc cu fereastra vizibila,
-                // ca sa nu desenam inutil camere vecine intregi pe post de "fundal".
-                val overlapsView = topLeft.x < size.width && topLeft.x + sizePx.width > 0f &&
-                    topLeft.y < size.height && topLeft.y + sizePx.height > 0f
-                if (!overlapsView) return@forEach
-
-                val isMonitoredRoom = r.id == roomId
-                drawRect(
-                    color = monitorRoomColor(r, isMonitoredRoom),
-                    topLeft = topLeft,
-                    size = sizePx
-                )
-                drawRect(
-                    color = Color(0xFF000000),
-                    topLeft = topLeft,
-                    size = sizePx,
-                    style = Stroke(width = 2f)
-                )
-            }
+            // Podeaua camerei, umplind tot cadrul.
+            drawRect(
+                color = monitorRoomColor(room, true),
+                topLeft = Offset.Zero,
+                size = size
+            )
 
             // Pozitia EXACTA a fiecarui jucator, live.
             playersHere.forEach { pos ->
