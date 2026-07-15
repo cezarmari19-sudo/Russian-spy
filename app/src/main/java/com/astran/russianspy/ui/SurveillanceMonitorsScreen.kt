@@ -28,7 +28,10 @@ private val MONITORED_ROOMS = listOf(
     "server_room" to "Camera Servere"
 )
 
-private const val MONITOR_VIEW_SIZE = 900f
+// Marja (in unitati de lume) adaugata in jurul camerei monitorizate, ca sa se
+// vada putin din pragul usii / holul adiacent, fara sa arate camere vecine intregi
+// (stil Among Us: fiecare monitor arata DOAR camera respectiva, nu jumatate de harta).
+private const val MONITOR_VIEW_MARGIN = 60f
 
 @Composable
 fun SurveillanceMonitorsScreen(
@@ -123,11 +126,17 @@ private fun MonitorPanel(
         val centerX = room.centerX()
         val centerY = room.centerY()
 
+        // Fereastra de vizualizare = doar camera monitorizata + o mica marja,
+        // NU o raza mare care prinde jumatate din harta.
+        val viewWidth = room.width + MONITOR_VIEW_MARGIN * 2f
+        val viewHeight = room.height + MONITOR_VIEW_MARGIN * 2f
+
         // Doar jucatorii aflati EFECTIV in camera supravegheata, cu pozitia lor exacta X/Y.
         val playersHere = playerLivePositions.values.filter { it.roomId == roomId }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val scale = minOf(size.width, size.height) / MONITOR_VIEW_SIZE
+            // Scala aleasa astfel incat camera + marja sa umple ecranul (zoom stil Among Us).
+            val scale = minOf(size.width / viewWidth, size.height / viewHeight)
 
             fun worldToScreen(wx: Float, wy: Float): Offset {
                 val dx = (wx - centerX) * scale
@@ -136,11 +145,14 @@ private fun MonitorPanel(
             }
 
             BuildingLayout.rooms.forEach { r ->
-                val rCenterDist = kotlin.math.hypot(r.centerX() - centerX, r.centerY() - centerY)
-                if (rCenterDist > MONITOR_VIEW_SIZE) return@forEach
-
                 val topLeft = worldToScreen(r.x, r.y)
                 val sizePx = Size(r.width * scale, r.height * scale)
+
+                // Sarim peste camerele care nu se suprapun deloc cu fereastra vizibila,
+                // ca sa nu desenam inutil camere vecine intregi pe post de "fundal".
+                val overlapsView = topLeft.x < size.width && topLeft.x + sizePx.width > 0f &&
+                    topLeft.y < size.height && topLeft.y + sizePx.height > 0f
+                if (!overlapsView) return@forEach
 
                 val isMonitoredRoom = r.id == roomId
                 drawRect(
