@@ -60,6 +60,19 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
     # la conectare, anuntam pe toti (inclusiv pe cel nou) starea curenta a lobby-ului
     await broadcast_lobby_update(room_code)
 
+    # trimitem noului conectat pozitiile CURENTE ale tuturor jucatorilor deja aflati in camere,
+    # ca monitoarele de supraveghere sa aiba imediat date corecte, nu doar mutari viitoare
+    room = game_manager.get_room(room_code)
+    if room:
+        snapshot = [
+            {"playerId": p.id, "roomId": p.current_room_id}
+            for p in room.players.values()
+        ]
+        await websocket.send_text(json.dumps({
+            "type": "positions_snapshot",
+            "positions": snapshot
+        }))
+
     try:
         while True:
             raw = await websocket.receive_text()
