@@ -14,8 +14,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# tine evidenta conexiunilor WebSocket active, per room_code
 active_connections: dict[str, dict[str, WebSocket]] = {}
+
+# tine minte ultima pozitie X/Y cunoscuta pentru fiecare jucator, per camera de joc
+last_positions: dict[str, dict[str, dict]] = {}
 
 
 @app.get("/")
@@ -57,15 +59,20 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
         active_connections[room_code] = {}
     active_connections[room_code][player_id] = websocket
 
-    # la conectare, anuntam pe toti (inclusiv pe cel nou) starea curenta a lobby-ului
+    if room_code not in last_positions:
+        last_positions[room_code] = {}
+
     await broadcast_lobby_update(room_code)
 
-    # trimitem noului conectat pozitiile CURENTE ale tuturor jucatorilor deja aflati in camere,
-    # ca monitoarele de supraveghere sa aiba imediat date corecte, nu doar mutari viitoare
     room = game_manager.get_room(room_code)
     if room:
         snapshot = [
-            {"playerId": p.id, "roomId": p.current_room_id}
+            {
+                "playerId": p.id,
+                "roomId": p.current_room_id,
+                "x": last_positions[room_code].get(p.id, {}).get("x"),
+                "y": last_positions[room_code].get(p.id, {}).get("y"),
+            }
             for p in room.players.values()
         ]
         await websocket.send_text(json.dumps({
@@ -94,6 +101,18 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         "playerId": player_id,
                         "targetRoomId": target_room_id
                     })
+
+            elif action == "position_update":
+                x = data.get("x")
+                y = data.get("y")
+                if x is not None and y is not None:
+                    last_positions[room_code][player_id] = {"x": x, "y": y}
+                    await broadcast_to_room(room_code, {
+                        "type": "position_update",
+                        "playerId": player_id,
+                        "x": x,
+                        "y": y
+                    }, exclude_player_id=player_id)
 
             elif action == "start_game":
                 error = game_manager.start_game(room_code)
@@ -124,6 +143,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
         game_manager.remove_player(room_code, player_id)
         if room_code in active_connections and player_id in active_connections[room_code]:
             del active_connections[room_code][player_id]
+        if room_code in last_positions and player_id in last_positions[room_code]:
+            del last_positions[room_code][player_id]
         await broadcast_to_room(room_code, {
             "type": "player_disconnected",
             "playerId": player_id
