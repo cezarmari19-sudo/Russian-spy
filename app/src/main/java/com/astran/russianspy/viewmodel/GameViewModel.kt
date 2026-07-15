@@ -15,10 +15,13 @@ import com.astran.russianspy.model.SurveillanceEvent
 import com.astran.russianspy.model.SurveillanceEventType
 import com.astran.russianspy.network.LobbyPlayerInfo
 import com.astran.russianspy.network.NetworkClient
+import com.astran.russianspy.network.PlayerPositionInfo
 import com.astran.russianspy.network.ServerEvent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+
+data class LivePosition(val roomId: String, val x: Float, val y: Float)
 
 class GameViewModel : ViewModel() {
 
@@ -43,13 +46,11 @@ class GameViewModel : ViewModel() {
     private val _currentRoomId = mutableStateOf("entrance")
     val currentRoomId: State<String> = _currentRoomId
 
-    // Lista de jucatori din lobby-ul de asteptare (inainte sa inceapa jocul)
     val lobbyPlayers = mutableStateListOf<LobbyPlayerInfo>()
 
-    // Pozitiile LIVE ale tuturor jucatorilor: playerId -> roomId. Folosit de monitoarele de supraveghere.
-    val playerPositions = mutableStateMapOf<String, String>()
+    // Pozitiile LIVE (roomId + x + y exacte) ale tuturor jucatorilor. Folosit de monitoarele de supraveghere.
+    val playerLivePositions = mutableStateMapOf<String, LivePosition>()
 
-    // Numele jucatorilor cunoscute (playerId -> name), pentru afisare pe monitoare
     val playerNames = mutableStateMapOf<String, String>()
 
     private val _gameStarted = mutableStateOf(false)
@@ -81,7 +82,6 @@ class GameViewModel : ViewModel() {
                 rooms = BuildingLayout.rooms.toMutableList()
             )
             _currentRoomId.value = "entrance"
-            playerPositions[playerId] = "entrance"
             playerNames[playerId] = playerName
             client.connectWebSocket(roomCode, playerId)
         }
@@ -108,13 +108,11 @@ class GameViewModel : ViewModel() {
                 rooms = BuildingLayout.rooms.toMutableList()
             )
             _currentRoomId.value = "entrance"
-            playerPositions[playerId] = "entrance"
             playerNames[playerId] = playerName
             client.connectWebSocket(roomCode, playerId)
         }
     }
 
-    /** Apelat de host cand apasa butonul Start din lobby-ul de asteptare. */
     fun startGame() {
         networkClient?.sendStartGame()
     }
@@ -128,8 +126,13 @@ class GameViewModel : ViewModel() {
         val state = _gameState.value ?: return
         val player = state.players.find { it.id == _localPlayerId.value } ?: return
         player.currentRoomId = roomId
-        playerPositions[_localPlayerId.value] = roomId
         networkClient?.sendMove(roomId)
+    }
+
+    /** Apelat la fiecare cadru de miscare, ca monitoarele sa vada pozitia exacta X/Y a jucatorului local. */
+    fun updateLocalPosition(x: Float, y: Float, roomId: String) {
+        playerLivePositions[_localPlayerId.value] = LivePosition(roomId, x, y)
+        networkClient?.sendPositionUpdate(x, y)
     }
 
     fun spySendsIntel(fromRoomId: String) {
@@ -158,7 +161,16 @@ class GameViewModel : ViewModel() {
                 event.players.forEach { playerNames[it.id] = it.name }
             }
             is ServerEvent.PositionsSnapshot -> {
-                playerPositions.putAll(event.positions)
+                event.positions.forEach { info ->
+                    if (info.x != null && info.y != null) {
+                        playerLivePositions[info.playerId] = LivePosition(info.roomId, info.x, info.y)
+                    }
+                }
+            }
+            is ServerEvent.PositionUpdate -> {
+                val existing = playerLivePositions[event.playerId]
+                val roomId = existing?.roomId ?: ""
+                playerLivePositions[event.playerId] = LivePosition(roomId, event.x, event.y)
             }
             is ServerEvent.GameStarted -> {
                 _myRole.value = if (event.yourRole == "RUSSIAN_SPY") Role.RUSSIAN_SPY else Role.FBI_AGENT
@@ -169,10 +181,13 @@ class GameViewModel : ViewModel() {
                 val state = _gameState.value ?: return
                 val player = state.players.find { it.id == event.playerId }
                 player?.currentRoomId = event.targetRoomId
-                playerPositions[event.playerId] = event.targetRoomId
+                val existing = playerLivePositions[event.playerId]
+                if (existing != null) {
+                    playerLivePositions[event.playerId] = existing.copy(roomId = event.targetRoomId)
+                }
             }
             is ServerEvent.PlayerDisconnected -> {
-                playerPositions.remove(event.playerId)
+                playerLivePositions.remove(event.playerId)
             }
             is ServerEvent.SurveillanceEvent -> {
                 val evt = SurveillanceEvent(
