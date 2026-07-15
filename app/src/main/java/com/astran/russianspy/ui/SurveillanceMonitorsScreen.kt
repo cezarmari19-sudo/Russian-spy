@@ -15,13 +15,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -31,20 +32,10 @@ import com.astran.russianspy.model.Room
 import com.astran.russianspy.model.RoomFunction
 import com.astran.russianspy.viewmodel.GameViewModel
 import com.astran.russianspy.viewmodel.LivePosition
+import com.astran.russianspy.viewmodel.SurveillanceCameraSpot
 import kotlin.math.absoluteValue
 import kotlin.math.sin
 import kotlin.random.Random
-
-/**
- * Camerele monitorizate. In Among Us fiecare monitor arata o camera FIXA a hartii,
- * fara sunet, doar miscare vizuala - exact ce recream aici.
- */
-private val MONITORED_ROOMS = listOf(
-    "entrance" to "INTRARE",
-    "hub_central" to "HOL CENTRAL",
-    "break_room" to "CAMERA PAUZA",
-    "server_room" to "CAMERA SERVERE"
-)
 
 @Composable
 fun SurveillanceMonitorsScreen(
@@ -53,6 +44,12 @@ fun SurveillanceMonitorsScreen(
 ) {
     val playerLivePositions = viewModel.playerLivePositions
     val playerNames = viewModel.playerNames
+    val cameraSpots = viewModel.surveillanceCameraSpots
+
+    // Segmentele de perete, calculate o singura data - identice cu cele folosite
+    // pe harta jocului, ca fiecare camera de supraveghere sa "vada" exact ca un
+    // jucator plasat in acel punct fix (blocat de aceiasi pereti).
+    val wallSegments = remember { buildWallSegmentsFromMergedRooms(BuildingLayout.rooms) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -67,6 +64,19 @@ fun SurveillanceMonitorsScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            if (cameraSpots.size < 4) {
+                // Pozitiile camerelor nu au fost inca primite/generate pentru runda asta.
+                Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "SE CONECTEAZA LA CAMERE...",
+                        color = Color(0xFF3DDC5A),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp
+                    )
+                }
+                return@Column
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -78,15 +88,17 @@ fun SurveillanceMonitorsScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     MonitorPanel(
-                        label = MONITORED_ROOMS[0].second,
-                        roomId = MONITORED_ROOMS[0].first,
+                        label = "CAM 1",
+                        spot = cameraSpots[0],
+                        wallSegments = wallSegments,
                         playerLivePositions = playerLivePositions,
                         playerNames = playerNames,
                         modifier = Modifier.weight(1f).fillMaxHeight()
                     )
                     MonitorPanel(
-                        label = MONITORED_ROOMS[1].second,
-                        roomId = MONITORED_ROOMS[1].first,
+                        label = "CAM 2",
+                        spot = cameraSpots[1],
+                        wallSegments = wallSegments,
                         playerLivePositions = playerLivePositions,
                         playerNames = playerNames,
                         modifier = Modifier.weight(1f).fillMaxHeight()
@@ -97,15 +109,17 @@ fun SurveillanceMonitorsScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     MonitorPanel(
-                        label = MONITORED_ROOMS[2].second,
-                        roomId = MONITORED_ROOMS[2].first,
+                        label = "CAM 3",
+                        spot = cameraSpots[2],
+                        wallSegments = wallSegments,
                         playerLivePositions = playerLivePositions,
                         playerNames = playerNames,
                         modifier = Modifier.weight(1f).fillMaxHeight()
                     )
                     MonitorPanel(
-                        label = MONITORED_ROOMS[3].second,
-                        roomId = MONITORED_ROOMS[3].first,
+                        label = "CAM 4",
+                        spot = cameraSpots[3],
+                        wallSegments = wallSegments,
                         playerLivePositions = playerLivePositions,
                         playerNames = playerNames,
                         modifier = Modifier.weight(1f).fillMaxHeight()
@@ -165,22 +179,33 @@ private fun SurveillanceHeader(onExit: () -> Unit) {
 }
 
 /**
- * Un singur monitor de supraveghere: bezel (cadru fizic) + ecran CRT cu camera fixa
- * randata in interior. Nu urmareste jucatorul, nu se roteste, nu are "vedere" limitata
- * la un poligon - arata TOATA camera fixa, tot timpul, exact ca un feed de CCTV.
+ * Un singur monitor de supraveghere: bezel (cadru fizic) + ecran CRT cu vederea REALA
+ * a camerei din punctul ei fix - exact ca un jucator care sta nemiscat in acel punct:
+ * raza limitata (VIEW_RADIUS) si blocata de pereti (nu vede prin ei), nu tot dreptunghiul
+ * camerei intregi.
  */
 @Composable
 private fun MonitorPanel(
     label: String,
-    roomId: String,
+    spot: SurveillanceCameraSpot,
+    wallSegments: List<WallSegment>,
     playerLivePositions: Map<String, LivePosition>,
     playerNames: Map<String, String>,
     modifier: Modifier = Modifier
 ) {
-    val room = remember(roomId) { BuildingLayout.getRoomById(roomId) }
+    // Poligonul de vizibilitate al camerei, recalculat doar cand se schimba pozitia
+    // camerei (o data pe runda), nu la fiecare cadru - camera sta pe loc.
+    val visibilityPolygon = remember(spot.x, spot.y) {
+        computeVisibilityPolygon(
+            originX = spot.x,
+            originY = spot.y,
+            segments = wallSegments,
+            viewRadius = VIEW_RADIUS
+        )
+    }
 
     // Zgomot / static animat, ca un feed video real usor instabil.
-    val infinite = rememberInfiniteTransition(label = "static_$roomId")
+    val infinite = rememberInfiniteTransition(label = "static_${spot.roomId}")
     val staticPhase by infinite.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -212,26 +237,21 @@ private fun MonitorPanel(
                 .background(Color.Black, RoundedCornerShape(4.dp))
                 .padding(3.dp)
         ) {
-            if (room == null) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black))
-                return@Box
+            // Jucatorii aflati in raza de vizibilitate REALA a camerei (distanta +
+            // vizibilitate directa, nu doar "aceeasi camera din harta").
+            val visiblePlayers = playerLivePositions.entries.filter { (_, pos) ->
+                isPointVisible(pos.x, pos.y, spot.x, spot.y, wallSegments, VIEW_RADIUS)
             }
-
-            val centerX = room.centerX()
-            val centerY = room.centerY()
-            val playersHere = playerLivePositions.entries
-                .filter { it.value.roomId == roomId }
 
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawCameraFeed(
-                    room = room,
-                    centerX = centerX,
-                    centerY = centerY,
-                    players = playersHere,
+                    spot = spot,
+                    visibilityPolygon = visibilityPolygon,
+                    players = visiblePlayers,
                     playerNames = playerNames,
                     staticPhase = staticPhase,
                     scanlineOffset = scanlineOffset,
-                    seed = roomId.hashCode()
+                    seed = spot.roomId.hashCode()
                 )
             }
 
@@ -264,7 +284,7 @@ private fun MonitorPanel(
 
             // Cate persoane sunt vizibile acum in acest cadru, coltul din dreapta-sus.
             Text(
-                text = "${playersHere.size}",
+                text = "${visiblePlayers.size}",
                 color = Color(0xFF3DDC5A).copy(alpha = 0.85f),
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
@@ -276,60 +296,112 @@ private fun MonitorPanel(
     }
 }
 
-/** Deseneaza feed-ul complet al unei camere fixe: podea, contur camera, jucatori, si efectele CRT. */
+/**
+ * Verifica daca punctul (px, py) e vizibil din (originX, originY) - adica in raza
+ * de vizibilitate SI fara niciun perete intre ele. Foloseste aceeasi logica de
+ * intersectie raza-segment ca poligonul de vizibilitate, dar testeaza direct
+ * punctul jucatorului (nu doar colturile peretilor).
+ */
+private fun isPointVisible(
+    px: Float,
+    py: Float,
+    originX: Float,
+    originY: Float,
+    segments: List<WallSegment>,
+    viewRadius: Float
+): Boolean {
+    val dx = px - originX
+    val dy = py - originY
+    val dist = kotlin.math.hypot(dx, dy)
+    if (dist > viewRadius) return false
+    if (dist < 0.001f) return true
+
+    val dirX = dx / dist
+    val dirY = dy / dist
+
+    segments.forEach { seg ->
+        val t = rayHitDistance(originX, originY, dirX, dirY, seg)
+        // Daca exista un perete intersectat MAI APROAPE decat jucatorul, jucatorul e ascuns.
+        if (t != null && t < dist - 0.5f) return false
+    }
+    return true
+}
+
+/** Deseneaza feed-ul complet al unei camere fixe: podea vizibila (raycasting), jucatori, efecte CRT. */
 private fun DrawScope.drawCameraFeed(
-    room: Room,
-    centerX: Float,
-    centerY: Float,
+    spot: SurveillanceCameraSpot,
+    visibilityPolygon: List<WorldPoint>,
     players: List<Map.Entry<String, LivePosition>>,
     playerNames: Map<String, String>,
     staticPhase: Float,
     scanlineOffset: Float,
     seed: Int
 ) {
-    val scale = minOf(size.width / room.width, size.height / room.height) * 0.94f
+    // Scala aleasa ca raza de vizibilitate (VIEW_RADIUS) sa umple cadrul monitorului.
+    val scale = minOf(size.width, size.height) / (VIEW_RADIUS * 2f)
 
     fun worldToScreen(wx: Float, wy: Float): Offset {
-        val dx = (wx - centerX) * scale
-        val dy = (wy - centerY) * scale
+        val dx = (wx - spot.x) * scale
+        val dy = (wy - spot.y) * scale
         return Offset(size.width / 2f + dx, size.height / 2f + dy)
     }
 
-    // 1) Podeaua camerei (fundalul feed-ului), usor gri-verzui ca pe un monitor CCTV vechi.
-    drawRect(color = roomFloorColor(room), topLeft = Offset.Zero, size = size)
+    // Fundal complet negru - orice nu e in poligonul de vizibilitate ramane nevazut,
+    // exact ca la jucator pe harta (camera nu vede prin pereti).
+    drawRect(color = Color.Black, topLeft = Offset.Zero, size = size)
 
-    // 2) Grid de podea, ca sa se vada scara si miscarea, exact stilul Among Us.
-    val gridStep = 26f
-    val gridColor = Color.White.copy(alpha = 0.045f)
-    var gx = 0f
-    while (gx < size.width) {
-        drawLine(gridColor, Offset(gx, 0f), Offset(gx, size.height), strokeWidth = 1f)
-        gx += gridStep
-    }
-    var gy = 0f
-    while (gy < size.height) {
-        drawLine(gridColor, Offset(0f, gy), Offset(size.width, gy), strokeWidth = 1f)
-        gy += gridStep
+    val room = BuildingLayout.getRoomAtPoint(spot.x, spot.y)
+    val floorColor = if (room != null) roomFloorColor(room) else Color(0xFF14171A)
+
+    val visibilityPathScreen = Path().apply {
+        if (visibilityPolygon.isNotEmpty()) {
+            val first = worldToScreen(visibilityPolygon[0].x, visibilityPolygon[0].y)
+            moveTo(first.x, first.y)
+            for (i in 1 until visibilityPolygon.size) {
+                val p = worldToScreen(visibilityPolygon[i].x, visibilityPolygon[i].y)
+                lineTo(p.x, p.y)
+            }
+            close()
+        }
     }
 
-    // 3) Conturul camerei (peretii vizibili in cadru).
-    drawRoundRect(
-        color = Color.Black.copy(alpha = 0.6f),
-        topLeft = Offset(4f, 4f),
-        size = Size(size.width - 8f, size.height - 8f),
-        cornerRadius = CornerRadius(10f, 10f),
-        style = Stroke(width = 5f)
+    // Tot ce desenam mai jos e "taiat" la forma poligonului vizibil - restul ramane negru,
+    // exact ca vederea unui jucator.
+    clipPath(visibilityPathScreen) {
+        // 1) Podeaua zonei vizibile.
+        drawRect(color = floorColor, topLeft = Offset.Zero, size = size)
+
+        // 2) Grid de podea, ca sa se vada scara si miscarea, exact stilul Among Us.
+        val gridStep = 26f
+        val gridColor = Color.White.copy(alpha = 0.045f)
+        var gx = 0f
+        while (gx < size.width) {
+            drawLine(gridColor, Offset(gx, 0f), Offset(gx, size.height), strokeWidth = 1f)
+            gx += gridStep
+        }
+        var gy = 0f
+        while (gy < size.height) {
+            drawLine(gridColor, Offset(0f, gy), Offset(size.width, gy), strokeWidth = 1f)
+            gy += gridStep
+        }
+
+        // 3) Jucatorii vizibili in cadru - fiecare cu umbra, marker si eticheta cu numele.
+        //    NOTE PENTRU DEZVOLTATOR: aici e locul unde se randeaza avatarul fiecarui jucator.
+        //    Momentan e un PLACEHOLDER simplu (cerc + contur) - va fi inlocuit cu avatarul
+        //    custom facut de tine. Cauta functia drawPlayerPlaceholder() mai jos.
+        players.forEach { (playerId, pos) ->
+            val screenPos = worldToScreen(pos.x, pos.y)
+            val color = colorForPlayer(playerId)
+            drawPlayerPlaceholder(center = screenPos, color = color)
+        }
+    }
+
+    // 4) Conturul poligonului de vizibilitate (marginea dintre vazut/nevazut), subtil.
+    drawPath(
+        path = visibilityPathScreen,
+        color = Color(0xFF3DDC5A).copy(alpha = 0.12f),
+        style = Stroke(width = 1.5f)
     )
-
-    // 4) Jucatorii vizibili in cadru - fiecare cu umbra, marker si eticheta cu numele.
-    //    NOTE PENTRU DEZVOLTATOR: aici e locul unde se randeaza avatarul fiecarui jucator.
-    //    Momentan e un PLACEHOLDER simplu (cerc + contur) - va fi inlocuit cu avatarul
-    //    custom facut de tine. Cauta functia drawPlayerPlaceholder() mai jos.
-    players.forEach { (playerId, pos) ->
-        val screenPos = worldToScreen(pos.x, pos.y)
-        val color = colorForPlayer(playerId)
-        drawPlayerPlaceholder(center = screenPos, color = color)
-    }
 
     // 5) Static / zgomot de semnal - puncte aleatorii care clipesc, schimbate rapid.
     drawSignalStatic(phase = staticPhase, seed = seed, alpha = 0.05f)
@@ -439,4 +511,39 @@ private fun DrawScope.drawVignette() {
         topLeft = Offset.Zero,
         size = size
     )
+}
+
+/**
+ * Distanta t (>=0) pana la intersectia dintre raza (origin + t*dir) si segmentul dat,
+ * sau null daca nu se intersecteaza. Aceeasi logica ca in Visibility.kt, expusa aici
+ * ca sa poata fi folosita direct in isPointVisible() de mai sus.
+ */
+private fun rayHitDistance(
+    originX: Float,
+    originY: Float,
+    dirX: Float,
+    dirY: Float,
+    seg: WallSegment
+): Float? {
+    val x3 = seg.x1
+    val y3 = seg.y1
+    val x4 = seg.x2
+    val y4 = seg.y2
+
+    val denom = dirX * (y4 - y3) - dirY * (x4 - x3)
+    if (kotlin.math.abs(denom) < 1e-6f) return null
+
+    val t2 = ((x3 - originX) * dirY - (y3 - originY) * dirX) / denom
+    val edgeTolerance = 0.001f
+    if (t2 < -edgeTolerance || t2 > 1f + edgeTolerance) return null
+    val t2Clamped = t2.coerceIn(0f, 1f)
+
+    val t1 = if (kotlin.math.abs(dirX) > kotlin.math.abs(dirY)) {
+        (x3 + t2Clamped * (x4 - x3) - originX) / dirX
+    } else {
+        (y3 + t2Clamped * (y4 - y3) - originY) / dirY
+    }
+    if (t1 < 0f) return null
+
+    return t1
 }
