@@ -19,8 +19,8 @@ import com.astran.russianspy.data.BuildingLayout
 import com.astran.russianspy.model.Room
 import com.astran.russianspy.model.RoomFunction
 import com.astran.russianspy.viewmodel.GameViewModel
+import com.astran.russianspy.viewmodel.LivePosition
 
-/** Cele 4 camere supravegheate. Schimba aici daca vrei alte camere pe monitoare. */
 private val MONITORED_ROOMS = listOf(
     "entrance" to "Intrare",
     "hub_central" to "Hol Central",
@@ -28,7 +28,6 @@ private val MONITORED_ROOMS = listOf(
     "server_room" to "Camera Servere"
 )
 
-/** Cat de mult din harta (in unitati world) se vede in jurul camerei supravegheate. */
 private const val MONITOR_VIEW_SIZE = 900f
 
 @Composable
@@ -36,7 +35,7 @@ fun SurveillanceMonitorsScreen(
     viewModel: GameViewModel,
     onExit: () -> Unit
 ) {
-    val playerPositions = viewModel.playerPositions
+    val playerLivePositions = viewModel.playerLivePositions
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -65,7 +64,6 @@ fun SurveillanceMonitorsScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Grila 2x2, ca in Among Us
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -78,12 +76,12 @@ fun SurveillanceMonitorsScreen(
                 ) {
                     MonitorPanel(
                         roomId = MONITORED_ROOMS[0].first,
-                        playerPositions = playerPositions,
+                        playerLivePositions = playerLivePositions,
                         modifier = Modifier.weight(1f).fillMaxHeight()
                     )
                     MonitorPanel(
                         roomId = MONITORED_ROOMS[1].first,
-                        playerPositions = playerPositions,
+                        playerLivePositions = playerLivePositions,
                         modifier = Modifier.weight(1f).fillMaxHeight()
                     )
                 }
@@ -93,12 +91,12 @@ fun SurveillanceMonitorsScreen(
                 ) {
                     MonitorPanel(
                         roomId = MONITORED_ROOMS[2].first,
-                        playerPositions = playerPositions,
+                        playerLivePositions = playerLivePositions,
                         modifier = Modifier.weight(1f).fillMaxHeight()
                     )
                     MonitorPanel(
                         roomId = MONITORED_ROOMS[3].first,
-                        playerPositions = playerPositions,
+                        playerLivePositions = playerLivePositions,
                         modifier = Modifier.weight(1f).fillMaxHeight()
                     )
                 }
@@ -110,7 +108,7 @@ fun SurveillanceMonitorsScreen(
 @Composable
 private fun MonitorPanel(
     roomId: String,
-    playerPositions: Map<String, String>,
+    playerLivePositions: Map<String, LivePosition>,
     modifier: Modifier = Modifier
 ) {
     val room = remember(roomId) { BuildingLayout.getRoomById(roomId) }
@@ -125,8 +123,8 @@ private fun MonitorPanel(
         val centerX = room.centerX()
         val centerY = room.centerY()
 
-        // Punctele jucatorilor aflati in camera supravegheata (nu tot personajul, doar prezenta)
-        val playersInRoom = playerPositions.filter { it.value == roomId }.keys.toList()
+        // Doar jucatorii aflati EFECTIV in camera supravegheata, cu pozitia lor exacta X/Y.
+        val playersHere = playerLivePositions.values.filter { it.roomId == roomId }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             val scale = minOf(size.width, size.height) / MONITOR_VIEW_SIZE
@@ -137,7 +135,6 @@ private fun MonitorPanel(
                 return Offset(size.width / 2f + dx, size.height / 2f + dy)
             }
 
-            // Desenam toate camerele/holurile care intra in fereastra vizibila a acestui monitor.
             BuildingLayout.rooms.forEach { r ->
                 val rCenterDist = kotlin.math.hypot(r.centerX() - centerX, r.centerY() - centerY)
                 if (rCenterDist > MONITOR_VIEW_SIZE) return@forEach
@@ -159,11 +156,9 @@ private fun MonitorPanel(
                 )
             }
 
-            // Punctele jucatorilor, desenate deasupra hartii.
-            playersInRoom.forEach { _ ->
-                val px = centerX + (Math.random().toFloat() - 0.5f) * (room.width * 0.5f)
-                val py = centerY + (Math.random().toFloat() - 0.5f) * (room.height * 0.5f)
-                val screenPos = worldToScreen(px, py)
+            // Pozitia EXACTA a fiecarui jucator, live.
+            playersHere.forEach { pos ->
+                val screenPos = worldToScreen(pos.x, pos.y)
                 drawCircle(
                     color = Color(0xFFFFD700),
                     radius = 8f,
@@ -178,7 +173,6 @@ private fun MonitorPanel(
             }
         }
 
-        // Scanlines cosmetice, stil CCTV.
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -201,6 +195,5 @@ private fun monitorRoomColor(room: Room, isMonitoredRoom: Boolean): Color {
         RoomFunction.COMMS_MONITOR -> Color(0xFF4A420F)
         RoomFunction.MEETING_ROOM -> Color(0xFF5A0F0F)
     }
-    // Camera efectiv supravegheata iese usor in evidenta fata de restul hartii vizibile.
     return if (isMonitoredRoom) base else base.copy(alpha = 0.55f)
 }
