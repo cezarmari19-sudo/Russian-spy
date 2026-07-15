@@ -59,6 +59,7 @@ fun GameCanvasScreen(
     var currentRoomIdLocal by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
+        var frameCounter = 0
         while (true) {
             withFrameNanos { }
             if (joystickDirX != 0f || joystickDirY != 0f) {
@@ -74,6 +75,13 @@ fun GameCanvasScreen(
                     if (newRoomId.isNotEmpty()) {
                         viewModel.moveToRoom(newRoomId)
                     }
+                }
+
+                // Trimitem pozitia exacta la fiecare al 3-lea cadru (nu la fiecare cadru,
+                // ca sa nu supraincarcam serverul cu update-uri prea dese).
+                frameCounter++
+                if (frameCounter % 3 == 0) {
+                    viewModel.updateLocalPosition(playerX, playerY, currentRoomIdLocal)
                 }
             }
         }
