@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.State
 import com.astran.russianspy.data.BuildingLayout
 import com.astran.russianspy.model.GamePhase
@@ -45,6 +46,12 @@ class GameViewModel : ViewModel() {
     // Lista de jucatori din lobby-ul de asteptare (inainte sa inceapa jocul)
     val lobbyPlayers = mutableStateListOf<LobbyPlayerInfo>()
 
+    // Pozitiile LIVE ale tuturor jucatorilor: playerId -> roomId. Folosit de monitoarele de supraveghere.
+    val playerPositions = mutableStateMapOf<String, String>()
+
+    // Numele jucatorilor cunoscute (playerId -> name), pentru afisare pe monitoare
+    val playerNames = mutableStateMapOf<String, String>()
+
     private val _gameStarted = mutableStateOf(false)
     val gameStarted: State<Boolean> = _gameStarted
 
@@ -74,6 +81,8 @@ class GameViewModel : ViewModel() {
                 rooms = BuildingLayout.rooms.toMutableList()
             )
             _currentRoomId.value = "entrance"
+            playerPositions[playerId] = "entrance"
+            playerNames[playerId] = playerName
             client.connectWebSocket(roomCode, playerId)
         }
     }
@@ -99,6 +108,8 @@ class GameViewModel : ViewModel() {
                 rooms = BuildingLayout.rooms.toMutableList()
             )
             _currentRoomId.value = "entrance"
+            playerPositions[playerId] = "entrance"
+            playerNames[playerId] = playerName
             client.connectWebSocket(roomCode, playerId)
         }
     }
@@ -117,6 +128,7 @@ class GameViewModel : ViewModel() {
         val state = _gameState.value ?: return
         val player = state.players.find { it.id == _localPlayerId.value } ?: return
         player.currentRoomId = roomId
+        playerPositions[_localPlayerId.value] = roomId
         networkClient?.sendMove(roomId)
     }
 
@@ -143,6 +155,10 @@ class GameViewModel : ViewModel() {
             is ServerEvent.LobbyUpdate -> {
                 lobbyPlayers.clear()
                 lobbyPlayers.addAll(event.players)
+                event.players.forEach { playerNames[it.id] = it.name }
+            }
+            is ServerEvent.PositionsSnapshot -> {
+                playerPositions.putAll(event.positions)
             }
             is ServerEvent.GameStarted -> {
                 _myRole.value = if (event.yourRole == "RUSSIAN_SPY") Role.RUSSIAN_SPY else Role.FBI_AGENT
@@ -153,12 +169,10 @@ class GameViewModel : ViewModel() {
                 val state = _gameState.value ?: return
                 val player = state.players.find { it.id == event.playerId }
                 player?.currentRoomId = event.targetRoomId
+                playerPositions[event.playerId] = event.targetRoomId
             }
             is ServerEvent.PlayerDisconnected -> {
-                val state = _gameState.value ?: return
-                state.players.find { it.id == event.playerId }?.let {
-                    // marcam ca deconectat; ramane vizibil in istoric daca vrei sa-l afisezi altfel
-                }
+                playerPositions.remove(event.playerId)
             }
             is ServerEvent.SurveillanceEvent -> {
                 val evt = SurveillanceEvent(
