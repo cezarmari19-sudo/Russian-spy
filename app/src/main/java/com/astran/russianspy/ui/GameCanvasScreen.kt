@@ -44,8 +44,10 @@ fun GameCanvasScreen(
     val playerSpeed = 5f
     val playerRadius = 12f
 
-    // Segmentele tuturor peretilor (marginile camerelor), calculate o singura data.
-    val wallSegments = remember { buildWallSegments(BuildingLayout.rooms) }
+    // Segmentele tuturor peretilor, calculate o singura data prin unirea camerelor
+    // care se ating/suprapun intr-o singura zona continua (evita "usi fantoma"
+    // si linii de perete gresite intre camere adiacente).
+    val wallSegments = remember { buildWallSegmentsFromMergedRooms(BuildingLayout.rooms) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -144,7 +146,16 @@ fun GameCanvasScreen(
                     val sizePx = Size(room.width * TILE_SCALE, room.height * TILE_SCALE)
 
                     drawRect(color = roomColor(room), topLeft = topLeft, size = sizePx)
-                    drawRect(color = Color(0xFF000000), topLeft = topLeft, size = sizePx, style = Stroke(width = 3f))
+                }
+            }
+
+            // Peretii reali (dupa unire) se deseneaza o singura data, deasupra camerelor,
+            // ca sa nu mai apara linii false in mijlocul zonelor unite.
+            clipPath(visibilityPathScreen) {
+                wallSegments.forEach { seg ->
+                    val p1 = worldToScreen(seg.x1, seg.y1)
+                    val p2 = worldToScreen(seg.x2, seg.y2)
+                    drawLine(color = Color.Black, start = p1, end = p2, strokeWidth = 3f)
                 }
             }
 
@@ -225,103 +236,143 @@ private fun isWalkable(px: Float, py: Float, radius: Float): Boolean {
 
 // ---------------------------------------------------------------------------------
 // Sistem de vizibilitate (raycasting), stil Among Us: raza fixa, blocata de pereti.
+//
+// Abordare noua, mai robusta decat inainte:
+// 1. Camerele sunt unite intr-o singura zona continua folosind un grid boolean
+//    (union geometrica pe celule), asa ca nu mai depindem de compararea exacta
+//    a coordonatelor de tip Float intre camere adiacente ("hall_x == hub_y").
+// 2. Peretii reali sunt extrasi ca marginile exterioare ale zonei unite -
+//    orice granita dintre doua camere care se ating/suprapun dispare automat,
+//    fara nicio lista separata de "usi".
+// 3. Raycasting-ul foloseste un epsilon relativ (nu +/-0.0001 fix) si sorteaza
+//    punctele dupa unghi cu un tie-break pe distanta, ca sa evite crestaturile
+//    ascutite cand doua raze au unghiuri aproape identice dar lovesc segmente
+//    diferite.
 // ---------------------------------------------------------------------------------
 
-private data class WallSegment(val x1: Float, val y1: Float, val x2: Float, val y2: Float)
+data class WallSegment(val x1: Float, val y1: Float, val x2: Float, val y2: Float)
 private data class WorldPoint(val x: Float, val y: Float)
 
+private const val GRID_CELL = 25f // rezolutia gridului de union, in unitati world
+
 /**
- * Construieste segmentele de perete din marginile camerelor.
- * Un segment care e (aproape) identic intre doua camere e o "usa"/trecere si e eliminat,
- * ca vederea sa poata trece liber intre camere adiacente.
+ * Uneste toate camerele intr-o zona continua folosind un grid boolean, apoi
+ * extrage marginile exterioare ale zonei unite ca segmente de perete.
+ * Asta elimina complet nevoia de a detecta "usi" prin compararea coordonatelor
+ * exacte intre camere - orice doua camere care se ating sau se suprapun devin
+ * automat o singura zona fara perete intre ele, indiferent de erori mici de
+ * aliniere in date.
  */
-private fun buildWallSegments(rooms: List<Room>): List<WallSegment> {
-    val rawSegments = mutableListOf<WallSegment>()
-    rooms.forEach { room ->
-        val x1 = room.x
-        val y1 = room.y
-        val x2 = room.x + room.width
-        val y2 = room.y + room.height
-        rawSegments.add(WallSegment(x1, y1, x2, y1)) // sus
-        rawSegments.add(WallSegment(x1, y2, x2, y2)) // jos
-        rawSegments.add(WallSegment(x1, y1, x1, y2)) // stanga
-        rawSegments.add(WallSegment(x2, y1, x2, y2)) // dreapta
-    }
+fun buildWallSegmentsFromMergedRooms(rooms: List<Room>): List<WallSegment> {
+    if (rooms.isEmpty()) return emptyList()
 
-    fun overlaps1D(aMin: Float, aMax: Float, bMin: Float, bMax: Float): Float {
-        return minOf(aMax, bMax) - maxOf(aMin, bMin)
-    }
+    val minX = rooms.minOf { it.x }
+    val minY = rooms.minOf { it.y }
+    val maxX = rooms.maxOf { it.x + it.width }
+    val maxY = rooms.maxOf { it.y + it.height }
 
-    val doors = mutableListOf<WallSegment>()
-    for (i in rawSegments.indices) {
-        for (j in i + 1 until rawSegments.size) {
-            val a = rawSegments[i]
-            val b = rawSegments[j]
-            val aVertical = a.x1 == a.x2
-            val bVertical = b.x1 == b.x2
-            if (aVertical != bVertical) continue
-            if (aVertical) {
-                if (a.x1 != b.x1) continue
-                val overlap = overlaps1D(minOf(a.y1, a.y2), maxOf(a.y1, a.y2), minOf(b.y1, b.y2), maxOf(b.y1, b.y2))
-                if (overlap > 1f) {
-                    val yMin = maxOf(minOf(a.y1, a.y2), minOf(b.y1, b.y2))
-                    val yMax = minOf(maxOf(a.y1, a.y2), maxOf(b.y1, b.y2))
-                    doors.add(WallSegment(a.x1, yMin, a.x1, yMax))
-                }
-            } else {
-                if (a.y1 != b.y1) continue
-                val overlap = overlaps1D(minOf(a.x1, a.x2), maxOf(a.x1, a.x2), minOf(b.x1, b.x2), maxOf(b.x1, b.x2))
-                if (overlap > 1f) {
-                    val xMin = maxOf(minOf(a.x1, a.x2), minOf(b.x1, b.x2))
-                    val xMax = minOf(maxOf(a.x1, a.x2), maxOf(b.x1, b.x2))
-                    doors.add(WallSegment(xMin, a.y1, xMax, a.y1))
-                }
+    val cols = kotlin.math.ceil((maxX - minX) / GRID_CELL).toInt() + 1
+    val rowsCount = kotlin.math.ceil((maxY - minY) / GRID_CELL).toInt() + 1
+
+    // occupied[row][col] = true daca celula respectiva e acoperita de vreo camera.
+    val occupied = Array(rowsCount) { BooleanArray(cols) }
+
+    fun cellCenterWorldX(col: Int) = minX + (col + 0.5f) * GRID_CELL
+    fun cellCenterWorldY(row: Int) = minY + (row + 0.5f) * GRID_CELL
+
+    for (row in 0 until rowsCount) {
+        for (col in 0 until cols) {
+            val wx = cellCenterWorldX(col)
+            val wy = cellCenterWorldY(row)
+            if (rooms.any { it.containsPoint(wx, wy) }) {
+                occupied[row][col] = true
             }
         }
     }
 
-    // Scadem partea de "usa" din fiecare perete original, pastrand restul ca perete solid.
+    fun isOccupied(row: Int, col: Int): Boolean {
+        if (row < 0 || row >= rowsCount || col < 0 || col >= cols) return false
+        return occupied[row][col]
+    }
+
+    // Pentru fiecare celula ocupata, verificam cele 4 muchii; daca vecinul de pe
+    // acea directie nu e ocupat, muchia respectiva e perete exterior real.
+    val rawEdges = mutableListOf<WallSegment>()
+    for (row in 0 until rowsCount) {
+        for (col in 0 until cols) {
+            if (!isOccupied(row, col)) continue
+
+            val x1 = minX + col * GRID_CELL
+            val y1 = minY + row * GRID_CELL
+            val x2 = x1 + GRID_CELL
+            val y2 = y1 + GRID_CELL
+
+            if (!isOccupied(row - 1, col)) rawEdges.add(WallSegment(x1, y1, x2, y1)) // sus
+            if (!isOccupied(row + 1, col)) rawEdges.add(WallSegment(x1, y2, x2, y2)) // jos
+            if (!isOccupied(row, col - 1)) rawEdges.add(WallSegment(x1, y1, x1, y2)) // stanga
+            if (!isOccupied(row, col + 1)) rawEdges.add(WallSegment(x2, y1, x2, y2)) // dreapta
+        }
+    }
+
+    return mergeCollinearSegments(rawEdges)
+}
+
+/**
+ * Uneste segmentele mici de grid care sunt coliniare si adiacente intr-un singur
+ * segment lung, ca sa reducem numarul de segmente folosite in raycasting
+ * (performanta) si sa evitam colturi false intre bucati de perete care de fapt
+ * formeaza o linie dreapta continua.
+ */
+private fun mergeCollinearSegments(segments: List<WallSegment>): List<WallSegment> {
+    val horizontal = segments.filter { it.y1 == it.y2 }
+        .groupBy { it.y1 }
+    val vertical = segments.filter { it.x1 == it.x2 }
+        .groupBy { it.x1 }
+
     val result = mutableListOf<WallSegment>()
-    rawSegments.forEach { seg ->
-        val segIsVertical = seg.x1 == seg.x2
-        val overlappingDoors = doors.filter { door ->
-            val doorIsVertical = door.x1 == door.x2
-            if (doorIsVertical != segIsVertical) return@filter false
-            if (segIsVertical) door.x1 == seg.x1 else door.y1 == seg.y1
-        }
-        if (overlappingDoors.isEmpty()) {
-            result.add(seg)
-            return@forEach
-        }
-        if (segIsVertical) {
-            val segMin = minOf(seg.y1, seg.y2)
-            val segMax = maxOf(seg.y1, seg.y2)
-            val covered = overlappingDoors.map { minOf(it.y1, it.y2) to maxOf(it.y1, it.y2) }.sortedBy { it.first }
-            var cursor = segMin
-            covered.forEach { (dMin, dMax) ->
-                if (dMin > cursor) result.add(WallSegment(seg.x1, cursor, seg.x1, dMin))
-                cursor = maxOf(cursor, dMax)
+
+    horizontal.forEach { (y, segs) ->
+        val intervals = segs.map { minOf(it.x1, it.x2) to maxOf(it.x1, it.x2) }.sortedBy { it.first }
+        var curStart = intervals.first().first
+        var curEnd = intervals.first().second
+        for (i in 1 until intervals.size) {
+            val (s, e) = intervals[i]
+            if (s <= curEnd + 0.01f) {
+                curEnd = maxOf(curEnd, e)
+            } else {
+                result.add(WallSegment(curStart, y, curEnd, y))
+                curStart = s
+                curEnd = e
             }
-            if (cursor < segMax) result.add(WallSegment(seg.x1, cursor, seg.x1, segMax))
-        } else {
-            val segMin = minOf(seg.x1, seg.x2)
-            val segMax = maxOf(seg.x1, seg.x2)
-            val covered = overlappingDoors.map { minOf(it.x1, it.x2) to maxOf(it.x1, it.x2) }.sortedBy { it.first }
-            var cursor = segMin
-            covered.forEach { (dMin, dMax) ->
-                if (dMin > cursor) result.add(WallSegment(cursor, seg.y1, dMin, seg.y1))
-                cursor = maxOf(cursor, dMax)
-            }
-            if (cursor < segMax) result.add(WallSegment(cursor, seg.y1, segMax, seg.y1))
         }
+        result.add(WallSegment(curStart, y, curEnd, y))
     }
+
+    vertical.forEach { (x, segs) ->
+        val intervals = segs.map { minOf(it.y1, it.y2) to maxOf(it.y1, it.y2) }.sortedBy { it.first }
+        var curStart = intervals.first().first
+        var curEnd = intervals.first().second
+        for (i in 1 until intervals.size) {
+            val (s, e) = intervals[i]
+            if (s <= curEnd + 0.01f) {
+                curEnd = maxOf(curEnd, e)
+            } else {
+                result.add(WallSegment(x, curStart, x, curEnd))
+                curStart = s
+                curEnd = e
+            }
+        }
+        result.add(WallSegment(x, curStart, x, curEnd))
+    }
+
     return result
 }
 
 /**
  * Calculeaza poligonul de vizibilitate din punctul (originX, originY), limitat la viewRadius,
- * blocat de segmentele de perete date. Foloseste raycasting catre fiecare capat de perete
- * relevant (plus unghiuri usor deviate) si intersecteaza fiecare raza cu cel mai apropiat perete.
+ * blocat de segmentele de perete date. Trage o raza catre fiecare capat de perete relevant
+ * (plus doua raze usor deviate cu un epsilon unghiular mic si constant) si intersecteaza
+ * fiecare raza cu cel mai apropiat perete, pastrand cea mai mica distanta gasita.
  */
 private fun computeVisibilityPolygon(
     originX: Float,
@@ -330,29 +381,29 @@ private fun computeVisibilityPolygon(
     viewRadius: Float
 ): List<WorldPoint> {
     val relevantSegments = segments.filter { seg ->
-        val midX = (seg.x1 + seg.x2) / 2f
-        val midY = (seg.y1 + seg.y2) / 2f
-        val dist = kotlin.math.hypot(midX - originX, midY - originY)
-        dist < viewRadius * 1.5f
+        val distToSeg = distancePointToSegment(originX, originY, seg)
+        distToSeg < viewRadius * 1.5f
     }
 
-    val angles = mutableListOf<Double>()
+    val angleEpsilon = 0.00005
+    val anglesSet = LinkedHashSet<Double>()
+
     relevantSegments.forEach { seg ->
         listOf(seg.x1 to seg.y1, seg.x2 to seg.y2).forEach { (px, py) ->
             val baseAngle = atan2((py - originY).toDouble(), (px - originX).toDouble())
-            angles.add(baseAngle - 0.0001)
-            angles.add(baseAngle)
-            angles.add(baseAngle + 0.0001)
+            anglesSet.add(baseAngle)
+            anglesSet.add(baseAngle - angleEpsilon)
+            anglesSet.add(baseAngle + angleEpsilon)
         }
     }
     // Adaugam si unghiuri uniforme ca fallback pentru zone fara pereti apropiati (camere deschise).
-    val fallbackSteps = 60
+    val fallbackSteps = 90
     for (i in 0 until fallbackSteps) {
-        angles.add(2.0 * Math.PI * i / fallbackSteps)
+        anglesSet.add(2.0 * Math.PI * i / fallbackSteps)
     }
 
     val points = mutableListOf<Pair<Double, WorldPoint>>()
-    angles.forEach { angle ->
+    anglesSet.forEach { angle ->
         val dx = cos(angle).toFloat()
         val dy = sin(angle).toFloat()
         var closestDist = viewRadius
@@ -373,9 +424,22 @@ private fun computeVisibilityPolygon(
     return points.sortedBy { it.first }.map { it.second }
 }
 
+private fun distancePointToSegment(px: Float, py: Float, seg: WallSegment): Float {
+    val dx = seg.x2 - seg.x1
+    val dy = seg.y2 - seg.y1
+    val lenSq = dx * dx + dy * dy
+    if (lenSq < 1e-6f) return kotlin.math.hypot(px - seg.x1, py - seg.y1)
+    var t = ((px - seg.x1) * dx + (py - seg.y1) * dy) / lenSq
+    t = t.coerceIn(0f, 1f)
+    val closestX = seg.x1 + t * dx
+    val closestY = seg.y1 + t * dy
+    return kotlin.math.hypot(px - closestX, py - closestY)
+}
+
 /**
  * Intersecteaza raza (origin + t*dir) cu segmentul dat. Returneaza distanta t (>=0) daca exista
- * intersectie in fata razei si in interiorul segmentului, altfel null.
+ * intersectie in fata razei si in interiorul segmentului (cu o mica toleranta la capete ca sa
+ * nu piarda intersectii chiar in colturi din cauza erorilor de rotunjire), altfel null.
  */
 private fun raySegmentIntersection(
     originX: Float,
@@ -393,12 +457,14 @@ private fun raySegmentIntersection(
     if (kotlin.math.abs(denom) < 1e-6f) return null
 
     val t2 = ((x3 - originX) * dirY - (y3 - originY) * dirX) / denom
-    if (t2 < 0f || t2 > 1f) return null
+    val edgeTolerance = 0.001f
+    if (t2 < -edgeTolerance || t2 > 1f + edgeTolerance) return null
+    val t2Clamped = t2.coerceIn(0f, 1f)
 
     val t1 = if (kotlin.math.abs(dirX) > kotlin.math.abs(dirY)) {
-        (x3 + t2 * (x4 - x3) - originX) / dirX
+        (x3 + t2Clamped * (x4 - x3) - originX) / dirX
     } else {
-        (y3 + t2 * (y4 - y3) - originY) / dirY
+        (y3 + t2Clamped * (y4 - y3) - originY) / dirY
     }
     if (t1 < 0f) return null
 
