@@ -1,143 +1,166 @@
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional
-import time
+import json
+import asyncio
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+
+from game_manager import game_manager
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+active_connections: dict[str, dict[str, WebSocket]] = {}
+
+# tine minte ultima pozitie X/Y cunoscuta pentru fiecare jucator, per camera de joc
+last_positions: dict[str, dict[str, dict]] = {}
 
 
-class Role(str, Enum):
-    FBI_AGENT = "FBI_AGENT"
-    RUSSIAN_SPY = "RUSSIAN_SPY"
+@app.get("/")
+async def health_check():
+    return {"status": "ok", "service": "russian-spy-server"}
 
 
-class RoomFunction(str, Enum):
-    SURVEILLANCE = "SURVEILLANCE"
-    COMMS_MONITOR = "COMMS_MONITOR"
-    FORENSICS_LAB = "FORENSICS_LAB"
-    ARMORY = "ARMORY"
-    SERVER_ROOM = "SERVER_ROOM"
-    OFFICE = "OFFICE"
-    BREAK_ROOM = "BREAK_ROOM"
-    ENTRANCE = "ENTRANCE"
+async def broadcast_to_room(room_code: str, message: dict, exclude_player_id: str = None):
+    connections = active_connections.get(room_code, {})
+    payload = json.dumps(message)
+    for player_id, ws in list(connections.items()):
+        if player_id == exclude_player_id:
+            continue
+        try:
+            await ws.send_text(payload)
+        except Exception:
+            pass
 
 
-class GamePhase(str, Enum):
-    LOBBY = "LOBBY"
-    IN_PROGRESS = "IN_PROGRESS"
-    SPY_WON = "SPY_WON"
-    FBI_WON = "FBI_WON"
+async def broadcast_lobby_update(room_code: str):
+    room = game_manager.get_room(room_code)
+    if room is None:
+        return
+    players_payload = [
+        {"id": p.id, "name": p.name, "connected": p.connected}
+        for p in room.players.values()
+    ]
+    await broadcast_to_room(room_code, {
+        "type": "lobby_update",
+        "players": players_payload
+    })
 
 
-@dataclass
-class Player:
-    id: str
-    name: str
-    role: Role = Role.FBI_AGENT
-    is_alive: bool = True
-    current_room_id: str = "entrance"
-    is_wearing_gloves: bool = False
-    connected: bool = True
+@app.websocket("/ws/{room_code}/{player_id}")
+async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: str):
+    await websocket.accept()
 
-    def to_dict(self, reveal_role: bool = False):
-        return {
-            "id": self.id,
-            "name": self.name,
-            "role": self.role.value if reveal_role else None,
-            "isAlive": self.is_alive,
-            "currentRoomId": self.current_room_id,
-            "connected": self.connected,
-        }
+    if room_code not in active_connections:
+        active_connections[room_code] = {}
+    active_connections[room_code][player_id] = websocket
+
+    if room_code not in last_positions:
+        last_positions[room_code] = {}
+
+    await broadcast_lobby_update(room_code)
+
+    room = game_manager.get_room(room_code)
+    if room:
+        snapshot = [
+            {
+                "playerId": p.id,
+                "roomId": p.current_room_id,
+                "x": last_positions[room_code].get(p.id, {}).get("x"),
+                "y": last_positions[room_code].get(p.id, {}).get("y"),
+            }
+            for p in room.players.values()
+        ]
+        await websocket.send_text(json.dumps({
+            "type": "positions_snapshot",
+            "positions": snapshot
+        }))
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            action = data.get("action")
+
+            if action == "move":
+                target_room_id = data.get("targetRoomId", "")
+                error = game_manager.move_player(room_code, player_id, target_room_id)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    await broadcast_to_room(room_code, {
+                        "type": "player_moved",
+                        "playerId": player_id,
+                        "targetRoomId": target_room_id
+                    })
+
+            elif action == "position_update":
+                x = data.get("x")
+                y = data.get("y")
+                if x is not None and y is not None:
+                    last_positions[room_code][player_id] = {"x": x, "y": y}
+                    await broadcast_to_room(room_code, {
+                        "type": "position_update",
+                        "playerId": player_id,
+                        "x": x,
+                        "y": y
+                    }, exclude_player_id=player_id)
+
+            elif action == "start_game":
+                error = game_manager.start_game(room_code)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    room = game_manager.get_room(room_code)
+                    for pid, ws in active_connections.get(room_code, {}).items():
+                        player = room.players.get(pid)
+                        if player:
+                            await ws.send_text(json.dumps({
+                                "type": "game_started",
+                                "yourRole": player.role.value
+                            }))
+
+            elif action == "spy_send_intel":
+                room = game_manager.get_room(room_code)
+                if room:
+                    player = room.players.get(player_id)
+                    if player:
+                        await broadcast_to_room(room_code, {
+                            "type": "surveillance_event",
+                            "eventType": "SPY_SENDING_INTEL",
+                            "fromRoomId": player.current_room_id
+                        }, exclude_player_id=player_id)
+
+    except WebSocketDisconnect:
+        game_manager.remove_player(room_code, player_id)
+        if room_code in active_connections and player_id in active_connections[room_code]:
+            del active_connections[room_code][player_id]
+        if room_code in last_positions and player_id in last_positions[room_code]:
+            del last_positions[room_code][player_id]
+        await broadcast_to_room(room_code, {
+            "type": "player_disconnected",
+            "playerId": player_id
+        })
+        await broadcast_lobby_update(room_code)
 
 
-@dataclass
-class Room:
-    id: str
-    name: str
-    function: RoomFunction
-    x: float
-    y: float
-    width: float
-    height: float
-    connected_room_ids: list[str] = field(default_factory=list)
-
-    def contains_point(self, px: float, py: float) -> bool:
-        return self.x <= px <= self.x + self.width and self.y <= py <= self.y + self.height
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "name": self.name,
-            "function": self.function.value,
-            "x": self.x,
-            "y": self.y,
-            "width": self.width,
-            "height": self.height,
-        }
+@app.post("/create_room")
+async def create_room(player_id: str, player_name: str):
+    room = game_manager.create_room(player_id, player_name)
+    return {"roomCode": room.room_code}
 
 
-@dataclass
-class DnaSample:
-    id: str
-    room_id: str
-    actual_owner_id: str
-    displayed_owner_id: str
-    completeness: int
-    is_analyzed: bool = False
-    was_tampered_with: bool = False
-
-    def is_reliable(self) -> bool:
-        return self.completeness >= 70
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "roomId": self.room_id,
-            "displayedOwnerId": self.displayed_owner_id,
-            "completeness": self.completeness,
-            "isAnalyzed": self.is_analyzed,
-        }
-
-
-@dataclass
-class IntelMessage:
-    id: str
-    sender_id: str
-    sent_at_millis: int
-    is_delivered: bool = False
-    was_intercepted_by_death: bool = False
-    requires_delay: bool = True
-
-
-@dataclass
-class GameRoom:
-    """Reprezinta o camera/lobby de joc (partida), nu o camera fizica din cladire."""
-    room_code: str
-    phase: GamePhase = GamePhase.LOBBY
-    players: dict[str, Player] = field(default_factory=dict)
-    dna_samples: dict[str, DnaSample] = field(default_factory=dict)
-    intel_messages: list[IntelMessage] = field(default_factory=list)
-    bomb_planted: bool = False
-    bomb_armed_at_millis: int = 0
-    created_at: float = field(default_factory=time.time)
-    # Cele 4 camere de supraveghere ale RUNDEI curente: fiecare e un dict
-    # {"roomId": str, "x": float, "y": float} - generate random la start_game(),
-    # aceleasi pentru toti jucatorii din runda respectiva.
-    surveillance_cameras: list[dict] = field(default_factory=list)
-
-    def alive_fbi_agents(self) -> list[Player]:
-        return [p for p in self.players.values() if p.is_alive and p.role == Role.FBI_AGENT]
-
-    def spy(self) -> Optional[Player]:
-        for p in self.players.values():
-            if p.role == Role.RUSSIAN_SPY:
-                return p
-        return None
-
-    def public_state_dict(self, requesting_player_id: str):
-        requester = self.players.get(requesting_player_id)
-        reveal = requester is not None
-        return {
-            "roomCode": self.room_code,
-            "phase": self.phase.value,
-            "players": [p.to_dict(reveal_role=(p.id == requesting_player_id)) for p in self.players.values()],
-            "bombPlanted": self.bomb_planted,
-        }
+@app.post("/join_room")
+async def join_room(room_code: str, player_id: str, player_name: str):
+    room, error = game_manager.join_room(room_code, player_id, player_name)
+    if error:
+        return {"error": error}
+    return {"roomCode": room.room_code}
