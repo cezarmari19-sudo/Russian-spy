@@ -111,6 +111,7 @@ class IntelMessage:
 class GameRoom:
     """Reprezinta o camera/lobby de joc (partida), nu o camera fizica din cladire."""
     room_code: str
+    host_id: str = ""
     phase: GamePhase = GamePhase.LOBBY
     players: dict[str, Player] = field(default_factory=dict)
     dna_samples: dict[str, DnaSample] = field(default_factory=dict)
