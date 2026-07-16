@@ -18,6 +18,7 @@ sealed class ServerEvent {
     data class PositionsSnapshot(val positions: List<PlayerPositionInfo>) : ServerEvent()
     data class GameStarted(val yourRole: String) : ServerEvent()
     data class SurveillanceEvent(val eventType: String, val fromRoomId: String) : ServerEvent()
+    data class SurveillanceCamerasAssigned(val spots: List<CameraSpotInfo>) : ServerEvent()
     data class PlayerDisconnected(val playerId: String) : ServerEvent()
     data class LobbyUpdate(val players: List<LobbyPlayerInfo>) : ServerEvent()
     data class Error(val message: String) : ServerEvent()
@@ -34,6 +35,13 @@ data class PlayerPositionInfo(
     val roomId: String,
     val x: Float?,
     val y: Float?
+)
+
+/** Pozitia fixa (roomId + x + y exacte) a unei camere de supraveghere pentru runda curenta. */
+data class CameraSpotInfo(
+    val roomId: String,
+    val x: Float,
+    val y: Float
 )
 
 class NetworkClient(
@@ -145,6 +153,18 @@ class NetworkClient(
                     fromRoomId = json.optString("fromRoomId", "")
                 )
             )
+            "surveillance_cameras_assigned" -> {
+                val arr = json.getJSONArray("spots")
+                val list = (0 until arr.length()).map { i ->
+                    val entry = arr.getJSONObject(i)
+                    CameraSpotInfo(
+                        roomId = entry.getString("roomId"),
+                        x = entry.getDouble("x").toFloat(),
+                        y = entry.getDouble("y").toFloat()
+                    )
+                }
+                onEvent(ServerEvent.SurveillanceCamerasAssigned(list))
+            }
             "player_disconnected" -> onEvent(
                 ServerEvent.PlayerDisconnected(playerId = json.getString("playerId"))
             )
