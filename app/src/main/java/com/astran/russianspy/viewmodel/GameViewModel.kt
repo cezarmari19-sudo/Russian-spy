@@ -23,6 +23,9 @@ import kotlin.random.Random
 
 data class LivePosition(val roomId: String, val x: Float, val y: Float)
 
+/** Pozitia fixa (camera + punct exact X/Y in interiorul ei) a unei camere de supraveghere, pentru runda curenta. */
+data class SurveillanceCameraSpot(val roomId: String, val x: Float, val y: Float)
+
 class GameViewModel : ViewModel() {
 
     private val _gameState = mutableStateOf<GameState?>(null)
@@ -62,6 +65,31 @@ class GameViewModel : ViewModel() {
     }
 
     val lobbyPlayers = mutableStateListOf<LobbyPlayerInfo>()
+
+    // Pozitiile FIXE (camera + X + Y exacte) ale celor 4 camere de supraveghere pentru
+    // RUNDA CURENTA. Ideal vin de la server (acelasi pentru toti jucatorii, generat o
+    // singura data de host/server la inceputul rundei). Daca serverul nu trimite inca
+    // acest eveniment, se genereaza local ca fallback, ca ecranul de camere sa functioneze.
+    val surveillanceCameraSpots = mutableStateListOf<SurveillanceCameraSpot>()
+
+    /** Genereaza local 4 camere random: camera hartii aleasa random + punct random in interiorul ei. */
+    fun generateRandomCameraSpotsLocally() {
+        if (surveillanceCameraSpots.isNotEmpty()) return // deja generate pentru runda asta
+        // Excludem holurile (HALLWAY) - o camera de supraveghere pusa pe un hol nu are sens,
+        // vrem camere reale (birouri, armurerie, servere, etc), inclusiv HUB si ENTRANCE.
+        val candidateRooms = BuildingLayout.rooms.filter { it.function.name != "HALLWAY" }
+        val chosen = candidateRooms.shuffled().take(4)
+        surveillanceCameraSpots.clear()
+        chosen.forEach { room ->
+            // Margine mica fata de pereti (10% din dimensiune), ca punctul sa nu cada
+            // chiar pe/langa un perete si sa aiba o vedere ingusta artificial.
+            val marginX = room.width * 0.1f
+            val marginY = room.height * 0.1f
+            val spotX = room.x + marginX + Random.nextFloat() * (room.width - marginX * 2f)
+            val spotY = room.y + marginY + Random.nextFloat() * (room.height - marginY * 2f)
+            surveillanceCameraSpots.add(SurveillanceCameraSpot(room.id, spotX, spotY))
+        }
+    }
 
     // Pozitiile LIVE (roomId + x + y exacte) ale tuturor jucatorilor. Folosit de monitoarele de supraveghere.
     val playerLivePositions = mutableStateMapOf<String, LivePosition>()
@@ -191,6 +219,20 @@ class GameViewModel : ViewModel() {
                 _myRole.value = if (event.yourRole == "RUSSIAN_SPY") Role.RUSSIAN_SPY else Role.FBI_AGENT
                 _gameState.value?.phase = GamePhase.IN_PROGRESS
                 _gameStarted.value = true
+                // Camerele se regenereaza pentru fiecare runda noua. Daca serverul trimite
+                // propriul eveniment "surveillance_cameras_assigned" imediat dupa asta,
+                // acela va suprascrie fallback-ul local mai jos cu pozitiile reale, comune
+                // tuturor jucatorilor.
+                surveillanceCameraSpots.clear()
+                generateRandomCameraSpotsLocally()
+            }
+            is ServerEvent.SurveillanceCamerasAssigned -> {
+                // Pozitii oficiale de la server - inlocuiesc orice fallback local generat,
+                // ca toti jucatorii sa vada exact aceleasi 4 camere in runda asta.
+                surveillanceCameraSpots.clear()
+                event.spots.forEach { spot ->
+                    surveillanceCameraSpots.add(SurveillanceCameraSpot(spot.roomId, spot.x, spot.y))
+                }
             }
             is ServerEvent.PlayerMoved -> {
                 val state = _gameState.value ?: return
