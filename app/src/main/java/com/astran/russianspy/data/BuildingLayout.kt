@@ -50,4 +50,13 @@ object BuildingLayout {
 
     const val START_X = 2250f
     const val START_Y = 2950f
+
+    // Pozitia FIZICA a monitorului din camera de Supraveghere (obiect langa perete,
+    // nu centrul camerei). Jucatorul trebuie sa fie la maxim MONITOR_INTERACT_RADIUS
+    // distanta de acest punct exact ca sa poata deschide camerele - nu e suficient
+    // doar sa fie in camera "surveillance", stil Among Us (task-urile se activeaza
+    // langa obiect, nu oriunde in camera).
+    const val SURVEILLANCE_MONITOR_X = 550f
+    const val SURVEILLANCE_MONITOR_Y = 1140f
+    const val MONITOR_INTERACT_RADIUS = 70f
 }
