@@ -56,7 +56,8 @@ object BuildingLayout {
     // distanta de acest punct exact ca sa poata deschide camerele - nu e suficient
     // doar sa fie in camera "surveillance", stil Among Us (task-urile se activeaza
     // langa obiect, nu oriunde in camera).
-    const val SURVEILLANCE_MONITOR_X = 550f
-    const val SURVEILLANCE_MONITOR_Y = 1140f
+    // Pozitionat langa peretele de sus, spre coltul din dreapta al camerei.
+    const val SURVEILLANCE_MONITOR_X = 640f
+    const val SURVEILLANCE_MONITOR_Y = 1112f
     const val MONITOR_INTERACT_RADIUS = 70f
 }
