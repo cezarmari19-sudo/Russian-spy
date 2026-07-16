@@ -139,6 +139,15 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         "spots": room.surveillance_cameras
                     })
 
+            elif action == "delete_room":
+                error = game_manager.delete_room(room_code, player_id)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    await broadcast_to_room(room_code, {"type": "room_deleted"})
+                    active_connections.pop(room_code, None)
+                    last_positions.pop(room_code, None)
+
             elif action == "spy_send_intel":
                 room = game_manager.get_room(room_code)
                 if room:
@@ -156,6 +165,16 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
             del active_connections[room_code][player_id]
         if room_code in last_positions and player_id in last_positions[room_code]:
             del last_positions[room_code][player_id]
+
+        # Daca nu mai ramane niciun jucator conectat in camera (fie in LOBBY,
+        # fie in timpul meciului), stergem camera automat - nu ramane nimic
+        # "agatat" in memoria serverului.
+        if not game_manager.has_connected_players(room_code):
+            game_manager.rooms.pop(room_code, None)
+            active_connections.pop(room_code, None)
+            last_positions.pop(room_code, None)
+            return
+
         await broadcast_to_room(room_code, {
             "type": "player_disconnected",
             "playerId": player_id
