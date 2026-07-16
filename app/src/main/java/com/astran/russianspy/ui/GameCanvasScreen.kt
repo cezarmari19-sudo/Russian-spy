@@ -192,19 +192,22 @@ fun GameCanvasScreen(
 
                 // Monitorul fizic din camera de Supraveghere - obiectul cu care jucatorul
                 // trebuie sa interactioneze (nu doar sa intre in camera) ca sa deschida camerele.
+                // Latimea e de 3x cea originala, lipit de peretele de sus al camerei.
                 val monitorScreenPos = worldToScreen(
                     BuildingLayout.SURVEILLANCE_MONITOR_X,
                     BuildingLayout.SURVEILLANCE_MONITOR_Y
                 )
+                val monitorWidthPx = 84f * TILE_SCALE
+                val monitorHeightPx = 20f * TILE_SCALE
                 drawRect(
                     color = Color(0xFF3DDC5A),
-                    topLeft = Offset(monitorScreenPos.x - 14f, monitorScreenPos.y - 10f),
-                    size = Size(28f, 20f)
+                    topLeft = Offset(monitorScreenPos.x - monitorWidthPx / 2f, monitorScreenPos.y - monitorHeightPx / 2f),
+                    size = Size(monitorWidthPx, monitorHeightPx)
                 )
                 drawRect(
                     color = Color.Black,
-                    topLeft = Offset(monitorScreenPos.x - 14f, monitorScreenPos.y - 10f),
-                    size = Size(28f, 20f),
+                    topLeft = Offset(monitorScreenPos.x - monitorWidthPx / 2f, monitorScreenPos.y - monitorHeightPx / 2f),
+                    size = Size(monitorWidthPx, monitorHeightPx),
                     style = Stroke(width = 2f)
                 )
             }
