@@ -79,6 +79,11 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
             "type": "positions_snapshot",
             "positions": snapshot
         }))
+        if room.surveillance_cameras:
+            await websocket.send_text(json.dumps({
+                "type": "surveillance_cameras_assigned",
+                "spots": room.surveillance_cameras
+            }))
 
     try:
         while True:
@@ -127,6 +132,12 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                                 "type": "game_started",
                                 "yourRole": player.role.value
                             }))
+                    # Camerele de supraveghere ale rundei (aceleasi pentru toti jucatorii),
+                    # trimise imediat dupa game_started catre toata camera.
+                    await broadcast_to_room(room_code, {
+                        "type": "surveillance_cameras_assigned",
+                        "spots": room.surveillance_cameras
+                    })
 
             elif action == "spy_send_intel":
                 room = game_manager.get_room(room_code)
@@ -163,4 +174,4 @@ async def join_room(room_code: str, player_id: str, player_name: str):
     room, error = game_manager.join_room(room_code, player_id, player_name)
     if error:
         return {"error": error}
-    return {"roomCode": room.room_code}
+    return {"success": True}
