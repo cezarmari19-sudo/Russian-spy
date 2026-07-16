@@ -73,11 +73,32 @@ class GameManager:
 
     def create_room(self, host_player_id: str, host_name: str) -> GameRoom:
         code = self._generate_room_code()
-        room = GameRoom(room_code=code)
+        room = GameRoom(room_code=code, host_id=host_player_id)
         host = Player(id=host_player_id, name=host_name, current_room_id="entrance")
         room.players[host_player_id] = host
         self.rooms[code] = room
         return room
+
+    def delete_room(self, room_code: str, requesting_player_id: str) -> Optional[str]:
+        """Sterge camera, dar doar daca cere admin-ul (host-ul) si doar cat timp
+        suntem inca in LOBBY. In timpul meciului (IN_PROGRESS) stergerea manuala
+        nu e permisa - stergerea in timpul jocului se face doar automat, cand
+        nu mai ramane niciun jucator conectat."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if requesting_player_id != room.host_id:
+            return "Doar adminul poate sterge camera"
+        if room.phase.value != "LOBBY":
+            return "Camera nu poate fi stearsa in timpul meciului"
+        del self.rooms[room_code]
+        return None
+
+    def has_connected_players(self, room_code: str) -> bool:
+        room = self.rooms.get(room_code)
+        if room is None:
+            return False
+        return any(p.connected for p in room.players.values())
 
     def join_room(self, room_code: str, player_id: str, player_name: str) -> tuple[Optional[GameRoom], Optional[str]]:
         room = self.rooms.get(room_code)
