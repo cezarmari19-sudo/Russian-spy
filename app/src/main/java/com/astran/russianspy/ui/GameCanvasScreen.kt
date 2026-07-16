@@ -157,4 +157,153 @@ fun GameCanvasScreen(
 
             val visibilityPathScreen = Path().apply {
                 if (visibilityPolygonWorld.isNotEmpty()) {
-                    val first = worldToScreen(visibilityPolygonWorld
+                    val first = worldToScreen(visibilityPolygonWorld[0].x, visibilityPolygonWorld[0].y)
+                    moveTo(first.x, first.y)
+                    for (i in 1 until visibilityPolygonWorld.size) {
+                        val p = worldToScreen(visibilityPolygonWorld[i].x, visibilityPolygonWorld[i].y)
+                        lineTo(p.x, p.y)
+                    }
+                    close()
+                }
+            }
+
+            // Tot ce desenam mai jos e "taiat" la forma poligonului vizibil - restul ramane negru.
+            clipPath(visibilityPathScreen) {
+                val viewRangeWorld = maxOf(size.width, size.height) / TILE_SCALE
+                BuildingLayout.rooms.forEach { room ->
+                    val roomCenterDist = kotlin.math.hypot(room.centerX() - playerX, room.centerY() - playerY)
+                    if (roomCenterDist > viewRangeWorld) return@forEach
+
+                    val topLeft = worldToScreen(room.x, room.y)
+                    val sizePx = Size(room.width * TILE_SCALE, room.height * TILE_SCALE)
+
+                    drawRect(color = roomColor(room), topLeft = topLeft, size = sizePx)
+                }
+            }
+
+            // Peretii reali (dupa unire) se deseneaza o singura data, deasupra camerelor,
+            // ca sa nu mai apara linii false in mijlocul zonelor unite.
+            clipPath(visibilityPathScreen) {
+                wallSegments.forEach { seg ->
+                    val p1 = worldToScreen(seg.x1, seg.y1)
+                    val p2 = worldToScreen(seg.x2, seg.y2)
+                    drawLine(color = Color.Black, start = p1, end = p2, strokeWidth = 3f)
+                }
+
+                // Monitorul fizic din camera de Supraveghere - obiectul cu care jucatorul
+                // trebuie sa interactioneze (nu doar sa intre in camera) ca sa deschida camerele.
+                val monitorScreenPos = worldToScreen(
+                    BuildingLayout.SURVEILLANCE_MONITOR_X,
+                    BuildingLayout.SURVEILLANCE_MONITOR_Y
+                )
+                drawRect(
+                    color = Color(0xFF3DDC5A),
+                    topLeft = Offset(monitorScreenPos.x - 14f, monitorScreenPos.y - 10f),
+                    size = Size(28f, 20f)
+                )
+                drawRect(
+                    color = Color.Black,
+                    topLeft = Offset(monitorScreenPos.x - 14f, monitorScreenPos.y - 10f),
+                    size = Size(28f, 20f),
+                    style = Stroke(width = 2f)
+                )
+            }
+
+            drawCircle(
+                color = Color(0xFFFFD700),
+                radius = playerRadius * TILE_SCALE,
+                center = Offset(screenCenterX, screenCenterY)
+            )
+            drawCircle(
+                color = Color(0xFF000000),
+                radius = playerRadius * TILE_SCALE,
+                center = Offset(screenCenterX, screenCenterY),
+                style = Stroke(width = 2f)
+            )
+
+            val origin = joystickOrigin
+            val knob = joystickKnob
+            if (origin != null && knob != null) {
+                drawCircle(
+                    color = Color(0x55FFFFFF),
+                    radius = JOYSTICK_BASE_RADIUS,
+                    center = origin
+                )
+                drawCircle(
+                    color = Color(0xCCFFFFFF),
+                    radius = JOYSTICK_KNOB_RADIUS,
+                    center = knob
+                )
+            }
+        }
+
+        Text(
+            text = currentRoomName(playerX, playerY),
+            color = Color.White,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(16.dp)
+        )
+
+        // Buton "Camere", vizibil DOAR cand jucatorul e langa monitorul fizic din
+        // camera de Supraveghere (nu oriunde in camera - altfel e prea usor/OP).
+        val distToMonitor = kotlin.math.hypot(
+            playerX - BuildingLayout.SURVEILLANCE_MONITOR_X,
+            playerY - BuildingLayout.SURVEILLANCE_MONITOR_Y
+        )
+        val isNearMonitor = distToMonitor <= BuildingLayout.MONITOR_INTERACT_RADIUS
+        if (isNearMonitor) {
+            Button(
+                onClick = onOpenSurveillanceMonitors,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(24.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            ) {
+                Text("📹 Camere")
+            }
+        }
+    }
+}
+
+private fun roomColor(room: Room): Color {
+    return when (room.function) {
+        RoomFunction.HALLWAY -> Color(0xFF2A2A2A)
+        RoomFunction.HUB -> Color(0xFF3A3A3A)
+        RoomFunction.ENTRANCE -> Color(0xFF455A64)
+        RoomFunction.SURVEILLANCE -> Color(0xFF4A148C)
+        RoomFunction.FORENSICS_LAB -> Color(0xFF01579B)
+        RoomFunction.ARMORY -> Color(0xFF880E4F)
+        RoomFunction.SERVER_ROOM -> Color(0xFF1B5E20)
+        RoomFunction.OFFICE -> Color(0xFF37474F)
+        RoomFunction.BREAK_ROOM -> Color(0xFF5D4037)
+        RoomFunction.COMMS_MONITOR -> Color(0xFF827717)
+        RoomFunction.MEETING_ROOM -> Color(0xFFB71C1C)
+    }
+}
+
+private fun currentRoomName(px: Float, py: Float): String {
+    val room = BuildingLayout.getRoomAtPoint(px, py)
+    return room?.name?.takeIf { it.isNotBlank() } ?: ""
+}
+
+private fun isWalkable(px: Float, py: Float, radius: Float): Boolean {
+    if (px - radius < 0f || px + radius > BuildingLayout.MAP_WIDTH) return false
+    if (py - radius < 0f || py + radius > BuildingLayout.MAP_HEIGHT) return false
+
+    val samplePoints = 8
+    for (i in 0 until samplePoints) {
+        val angle = (2.0 * Math.PI * i / samplePoints)
+        val sampleX = px + radius * cos(angle).toFloat()
+        val sampleY = py + radius * sin(angle).toFloat()
+        if (BuildingLayout.rooms.none { it.containsPoint(sampleX, sampleY) }) {
+            return false
+        }
+    }
+    return BuildingLayout.rooms.any { it.containsPoint(px, py) }
+}
+
+// Sistemul de vizibilitate (raycasting: WallSegment, buildWallSegmentsFromMergedRooms,
+// computeVisibilityPolygon, VIEW_RADIUS) e definit in Visibility.kt, ca sa fie
+// folosit identic si de camerele de supraveghere (SurveillanceMonitorsScreen).
