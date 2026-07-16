@@ -53,17 +53,24 @@ class Room:
     id: str
     name: str
     function: RoomFunction
-    grid_row: int
-    grid_col: int
+    x: float
+    y: float
+    width: float
+    height: float
     connected_room_ids: list[str] = field(default_factory=list)
+
+    def contains_point(self, px: float, py: float) -> bool:
+        return self.x <= px <= self.x + self.width and self.y <= py <= self.y + self.height
 
     def to_dict(self):
         return {
             "id": self.id,
             "name": self.name,
             "function": self.function.value,
-            "gridRow": self.grid_row,
-            "gridCol": self.grid_col,
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
         }
 
 
@@ -111,6 +118,10 @@ class GameRoom:
     bomb_planted: bool = False
     bomb_armed_at_millis: int = 0
     created_at: float = field(default_factory=time.time)
+    # Cele 4 camere de supraveghere ale RUNDEI curente: fiecare e un dict
+    # {"roomId": str, "x": float, "y": float} - generate random la start_game(),
+    # aceleasi pentru toti jucatorii din runda respectiva.
+    surveillance_cameras: list[dict] = field(default_factory=list)
 
     def alive_fbi_agents(self) -> list[Player]:
         return [p for p in self.players.values() if p.is_alive and p.role == Role.FBI_AGENT]
