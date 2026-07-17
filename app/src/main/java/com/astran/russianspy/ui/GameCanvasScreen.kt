@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.astran.russianspy.data.BuildingLayout
@@ -177,7 +179,20 @@ fun GameCanvasScreen(
                     val topLeft = worldToScreen(room.x, room.y)
                     val sizePx = Size(room.width * TILE_SCALE, room.height * TILE_SCALE)
 
-                    drawRect(color = roomColor(room), topLeft = topLeft, size = sizePx)
+                    if (room.id == "surveillance") {
+                        // Camera de Supraveghere e desenata complet vectorial (birou,
+                        // monitoare CRT, dulap, scaun, sigla FBI discreta pe podea) -
+                        // vezi RoomArt.kt pentru continutul detaliat, stil "FBI misterios".
+                        // translate() muta originea (0,0) in coltul camerei, ca desenul
+                        // din RoomArt sa foloseasca coordonate locale simple (0..w, 0..h).
+                        translate(left = topLeft.x, top = topLeft.y) {
+                            clipRect(left = 0f, top = 0f, right = sizePx.width, bottom = sizePx.height) {
+                                drawSurveillanceRoomDetailed(sizePx.width, sizePx.height)
+                            }
+                        }
+                    } else {
+                        drawRect(color = roomColor(room), topLeft = topLeft, size = sizePx)
+                    }
                 }
             }
 
@@ -189,27 +204,6 @@ fun GameCanvasScreen(
                     val p2 = worldToScreen(seg.x2, seg.y2)
                     drawLine(color = Color.Black, start = p1, end = p2, strokeWidth = 3f)
                 }
-
-                // Monitorul fizic din camera de Supraveghere - obiectul cu care jucatorul
-                // trebuie sa interactioneze (nu doar sa intre in camera) ca sa deschida camerele.
-                // Latimea e de 3x cea originala, lipit de peretele de sus al camerei.
-                val monitorScreenPos = worldToScreen(
-                    BuildingLayout.SURVEILLANCE_MONITOR_X,
-                    BuildingLayout.SURVEILLANCE_MONITOR_Y
-                )
-                val monitorWidthPx = 84f * TILE_SCALE
-                val monitorHeightPx = 20f * TILE_SCALE
-                drawRect(
-                    color = Color(0xFF3DDC5A),
-                    topLeft = Offset(monitorScreenPos.x - monitorWidthPx / 2f, monitorScreenPos.y - monitorHeightPx / 2f),
-                    size = Size(monitorWidthPx, monitorHeightPx)
-                )
-                drawRect(
-                    color = Color.Black,
-                    topLeft = Offset(monitorScreenPos.x - monitorWidthPx / 2f, monitorScreenPos.y - monitorHeightPx / 2f),
-                    size = Size(monitorWidthPx, monitorHeightPx),
-                    style = Stroke(width = 2f)
-                )
             }
 
             drawCircle(
