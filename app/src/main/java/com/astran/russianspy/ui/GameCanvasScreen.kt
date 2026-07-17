@@ -179,15 +179,17 @@ fun GameCanvasScreen(
                     val topLeft = worldToScreen(room.x, room.y)
                     val sizePx = Size(room.width * TILE_SCALE, room.height * TILE_SCALE)
 
-                    if (room.id == "surveillance") {
-                        // Camera de Supraveghere e desenata complet vectorial (birou,
-                        // monitoare CRT, dulap, scaun, sigla FBI discreta pe podea) -
-                        // vezi RoomArt.kt pentru continutul detaliat, stil "FBI misterios".
+                    if (room.id == "surveillance" || room.id == "armory") {
+                        // Camerele detaliate se deseneaza complet vectorial - vezi RoomArt.kt
+                        // pentru continutul fiecareia, stil "FBI misterios" consistent.
                         // translate() muta originea (0,0) in coltul camerei, ca desenul
                         // din RoomArt sa foloseasca coordonate locale simple (0..w, 0..h).
                         translate(left = topLeft.x, top = topLeft.y) {
                             clipRect(left = 0f, top = 0f, right = sizePx.width, bottom = sizePx.height) {
-                                drawSurveillanceRoomDetailed(sizePx.width, sizePx.height)
+                                when (room.id) {
+                                    "surveillance" -> drawSurveillanceRoomDetailed(sizePx.width, sizePx.height)
+                                    "armory" -> drawArmoryRoomDetailed(sizePx.width, sizePx.height)
+                                }
                             }
                         }
                     } else {
