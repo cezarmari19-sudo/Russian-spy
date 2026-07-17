@@ -194,3 +194,121 @@ fun DrawScope.drawSurveillanceRoomDetailed(w: Float, h: Float) {
 
     drawRoomVignette(w, h)
 }
+
+// ============================================================================
+// ARMURERIE - dulapuri de arme, zona restrictionata
+// ============================================================================
+
+/**
+ * Geometrie reala (BuildingLayout.kt): camera "armory" e x:2900-3200, y:500-750 (300x250).
+ * Accese:
+ * - hall_lab_armory intra prin peretele STANG, pe y:550-700 (local y: 50-200, adica
+ *   aproape tot peretele stang, centrat vertical) -> peretele stang ramane liber.
+ * - hall_armory intra prin peretele de JOS, pe x:3000-3100 (local x: 100-200,
+ *   centru-dreapta) -> acea portiune din jos ramane libera.
+ * Mobilierul (dulapurile de arme) e asezat lipit de peretele de SUS si de DREAPTA,
+ * zone fara niciun acces.
+ */
+fun DrawScope.drawArmoryRoomDetailed(w: Float, h: Float) {
+    // Podeaua: gri-albastrui foarte inchis, aproape negru - metalic, rece, oficial.
+    drawRect(color = Color(0xFF0E1114), topLeft = Offset.Zero, size = Size(w, h))
+    drawFloorGrid(w, h, cell = w / 9f)
+
+    // --- Dulapuri de arme, lipite de peretele de SUS (3 vitrine identice) ---
+    val cabinetCount = 3
+    val cabinetGap = w * 0.02f
+    val cabinetsAreaLeft = w * 0.30f  // incepe dupa zona de acces din stanga
+    val cabinetsAreaWidth = w * 0.66f
+    val cabinetWidth = (cabinetsAreaWidth - cabinetGap * (cabinetCount - 1)) / cabinetCount
+    val cabinetHeight = h * 0.34f
+    val cabinetTop = h * 0.03f
+
+    for (i in 0 until cabinetCount) {
+        val cx = cabinetsAreaLeft + i * (cabinetWidth + cabinetGap)
+
+        // Umbra sub dulap.
+        drawRect(
+            color = Color.Black.copy(alpha = 0.4f),
+            topLeft = Offset(cx - 2f, cabinetTop + cabinetHeight),
+            size = Size(cabinetWidth + 4f, h * 0.015f)
+        )
+
+        // Corpul dulapului (rama metalica).
+        solidRect(Offset(cx, cabinetTop), Size(cabinetWidth, cabinetHeight), RoomTheme.metalDark)
+
+        // Interiorul vitrinei - sticla usor iluminata, cu o tenta rosiatica discreta
+        // (lumina de securitate), ca sa para o zona restrictionata / alarma.
+        val glassPad = cabinetWidth * 0.1f
+        val glassColor = Color(0xFF3A1616)
+        drawRect(
+            color = glassColor,
+            topLeft = Offset(cx + glassPad, cabinetTop + glassPad),
+            size = Size(cabinetWidth - glassPad * 2f, cabinetHeight - glassPad * 2f)
+        )
+        // Glow rosu discret in jurul vitrinei - sursa de lumina a camerei.
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(Color(0xFFB33A3A).copy(alpha = 0.16f), Color.Transparent),
+                center = Offset(cx + cabinetWidth / 2f, cabinetTop + cabinetHeight / 2f),
+                radius = cabinetWidth * 1.3f
+            ),
+            topLeft = Offset(cx - cabinetWidth * 0.3f, cabinetTop - cabinetHeight * 0.3f),
+            size = Size(cabinetWidth * 1.6f, cabinetHeight * 1.6f)
+        )
+
+        // Siluete simple de arme in vitrina (2 dreptunghiuri lungi, verticale, sugerand pusti).
+        val gunW = cabinetWidth * 0.10f
+        val gunH = cabinetHeight * 0.58f
+        val gunY = cabinetTop + glassPad + (cabinetHeight - glassPad * 2f - gunH) / 2f
+        drawRect(
+            color = RoomTheme.metalLight.copy(alpha = 0.85f),
+            topLeft = Offset(cx + cabinetWidth * 0.35f, gunY),
+            size = Size(gunW, gunH)
+        )
+        drawRect(
+            color = RoomTheme.metalLight.copy(alpha = 0.85f),
+            topLeft = Offset(cx + cabinetWidth * 0.55f, gunY),
+            size = Size(gunW, gunH)
+        )
+
+        // Mic LED de status pe rama dulapului (rosu = incuiat/restrictionat).
+        drawCircle(Color(0xFFB33A3A), radius = 2.5f, center = Offset(cx + cabinetWidth * 0.9f, cabinetTop + cabinetHeight * 0.08f))
+    }
+
+    // --- Rack metalic vertical, lipit de peretele din DREAPTA (zona fara acces) ---
+    val rackWidth = w * 0.10f
+    val rackHeight = h * 0.52f
+    val rackLeft = w * 0.86f
+    val rackTop = h * 0.42f
+    solidRect(Offset(rackLeft, rackTop), Size(rackWidth, rackHeight), RoomTheme.metalDarker)
+    for (i in 1..4) {
+        val ly = rackTop + rackHeight * (i / 5f)
+        drawLine(
+            RoomTheme.objectOutline.copy(alpha = 0.7f),
+            Offset(rackLeft, ly),
+            Offset(rackLeft + rackWidth, ly),
+            strokeWidth = 1.5f
+        )
+    }
+    // Un LED galben pe rack (status neutru, spre deosebire de rosu de la vitrine).
+    drawCircle(Color(0xFFC9A227), radius = 2.5f, center = Offset(rackLeft + rackWidth * 0.5f, rackTop + rackHeight * 0.06f))
+
+    // --- Masa de intretinere/curatat arme, jos-stanga-centru (zona libera de accese) ---
+    val tableW = w * 0.20f
+    val tableH = h * 0.11f
+    val tableLeft = w * 0.30f
+    val tableTop = h * 0.75f
+    drawRect(
+        color = Color.Black.copy(alpha = 0.3f),
+        topLeft = Offset(tableLeft - 2f, tableTop + tableH),
+        size = Size(tableW + 4f, h * 0.015f)
+    )
+    solidRect(Offset(tableLeft, tableTop), Size(tableW, tableH), RoomTheme.metalDark)
+    drawRect(
+        color = RoomTheme.metalLight.copy(alpha = 0.3f),
+        topLeft = Offset(tableLeft, tableTop),
+        size = Size(tableW, tableH * 0.2f)
+    )
+
+    drawRoomVignette(w, h)
+}
