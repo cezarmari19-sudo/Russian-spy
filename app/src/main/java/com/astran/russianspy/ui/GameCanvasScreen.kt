@@ -179,7 +179,7 @@ fun GameCanvasScreen(
                     val topLeft = worldToScreen(room.x, room.y)
                     val sizePx = Size(room.width * TILE_SCALE, room.height * TILE_SCALE)
 
-                    if (room.id == "surveillance" || room.id == "armory" || room.id == "break_room") {
+                    if (room.id == "surveillance" || room.id == "armory" || room.id == "break_room" || room.id == "office1") {
                         // Camerele detaliate se deseneaza complet vectorial - vezi RoomArt.kt
                         // pentru continutul fiecareia, stil "FBI misterios" consistent.
                         // translate() muta originea (0,0) in coltul camerei, ca desenul
@@ -190,6 +190,7 @@ fun GameCanvasScreen(
                                     "surveillance" -> drawSurveillanceRoomDetailed(sizePx.width, sizePx.height)
                                     "armory" -> drawArmoryRoomDetailed(sizePx.width, sizePx.height)
                                     "break_room" -> drawBreakRoomDetailed(sizePx.width, sizePx.height)
+                                    "office1" -> drawOfficeRoomDetailed(sizePx.width, sizePx.height)
                                 }
                             }
                         }
