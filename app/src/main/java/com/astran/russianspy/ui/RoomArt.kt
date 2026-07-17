@@ -312,3 +312,148 @@ fun DrawScope.drawArmoryRoomDetailed(w: Float, h: Float) {
 
     drawRoomVignette(w, h)
 }
+
+// ============================================================================
+// CAMERA DE PAUZA - unicul spatiu cu tenta calda din cladire
+// ============================================================================
+
+/**
+ * Geometrie reala (BuildingLayout.kt): camera "break_room" e x:2900-3250, y:2050-2300
+ * (350x250). Singurul acces: hall_break intra prin peretele STANG, pe y:2125-2225
+ * (local y: 75-175, adica centrul vertical al peretelui stang) -> acea zona ramane libera.
+ * Mobilierul e distribuit sus (chiuveta/dulap), dreapta (automatul de cafea) si
+ * jos-centru (masa cu scaune), evitand toate centrul-stanga.
+ */
+fun DrawScope.drawBreakRoomDetailed(w: Float, h: Float) {
+    // Podeaua: maro-caramiziu foarte inchis, singura camera cu o tenta calda (nu rece/metalica),
+    // dar tot suficient de intunecata cat sa se incadreze in atmosfera generala.
+    drawRect(color = Color(0xFF1C130E), topLeft = Offset.Zero, size = Size(w, h))
+    drawFloorGrid(w, h, cell = w / 10f)
+
+    // --- Chiuveta/dulap de bucatarie, lipit de peretele de SUS (zona libera de acces) ---
+    val counterWidth = w * 0.5f
+    val counterHeight = h * 0.10f
+    val counterLeft = w * 0.28f
+    val counterTop = h * 0.03f
+
+    drawRect(
+        color = Color.Black.copy(alpha = 0.3f),
+        topLeft = Offset(counterLeft - 2f, counterTop + counterHeight),
+        size = Size(counterWidth + 4f, h * 0.015f)
+    )
+    solidRect(Offset(counterLeft, counterTop), Size(counterWidth, counterHeight), RoomTheme.metalDark)
+    // Blatul de lucru, usor mai deschis.
+    drawRect(
+        color = RoomTheme.metalLight.copy(alpha = 0.4f),
+        topLeft = Offset(counterLeft, counterTop),
+        size = Size(counterWidth, counterHeight * 0.22f)
+    )
+    // Chiuveta (patrat mai inchis, centrat pe blat).
+    val sinkSize = counterHeight * 0.5f
+    drawRect(
+        color = RoomTheme.metalDarker,
+        topLeft = Offset(counterLeft + counterWidth * 0.5f - sinkSize / 2f, counterTop + counterHeight * 0.3f),
+        size = Size(sinkSize, sinkSize * 0.7f)
+    )
+    // Cateva dulapuri sub blat (linii verticale de separare).
+    for (i in 1..4) {
+        val lx = counterLeft + counterWidth * (i / 5f)
+        drawLine(
+            RoomTheme.objectOutline.copy(alpha = 0.5f),
+            Offset(lx, counterTop + counterHeight * 0.4f),
+            Offset(lx, counterTop + counterHeight),
+            strokeWidth = 1.5f
+        )
+    }
+
+    // --- Automat de cafea/racoritoare, lipit de peretele din DREAPTA (zona libera) ---
+    val vendingWidth = w * 0.13f
+    val vendingHeight = h * 0.40f
+    val vendingLeft = w * 0.83f
+    val vendingTop = h * 0.28f
+
+    drawRect(
+        color = Color.Black.copy(alpha = 0.35f),
+        topLeft = Offset(vendingLeft - 2f, vendingTop + vendingHeight),
+        size = Size(vendingWidth + 4f, h * 0.015f)
+    )
+    solidRect(Offset(vendingLeft, vendingTop), Size(vendingWidth, vendingHeight), RoomTheme.metalDark)
+    // Panoul frontal, cu o lumina calda (galben-portocalie) - sursa principala de lumina a camerei.
+    val panelPad = vendingWidth * 0.14f
+    val warmColor = RoomTheme.accentWarm
+    drawRect(
+        color = warmColor.copy(alpha = 0.55f),
+        topLeft = Offset(vendingLeft + panelPad, vendingTop + panelPad),
+        size = Size(vendingWidth - panelPad * 2f, vendingHeight * 0.45f)
+    )
+    // Glow cald in jurul automatului.
+    drawRect(
+        brush = Brush.radialGradient(
+            colors = listOf(warmColor.copy(alpha = 0.20f), Color.Transparent),
+            center = Offset(vendingLeft + vendingWidth / 2f, vendingTop + vendingHeight * 0.3f),
+            radius = vendingWidth * 2f
+        ),
+        topLeft = Offset(vendingLeft - vendingWidth * 0.6f, vendingTop - vendingHeight * 0.4f),
+        size = Size(vendingWidth * 2.2f, vendingHeight * 1.6f)
+    )
+    // Butoane mici (2 randuri de puncte).
+    for (row in 0..1) {
+        for (col in 0..1) {
+            drawCircle(
+                RoomTheme.metalLight,
+                radius = 2f,
+                center = Offset(
+                    vendingLeft + panelPad + col * (vendingWidth - panelPad * 2f),
+                    vendingTop + vendingHeight * 0.65f + row * (vendingHeight * 0.12f)
+                )
+            )
+        }
+    }
+
+    // --- Masa rotunda cu scaune, jos-centru (zona clar libera de orice acces) ---
+    val tableCenterX = w * 0.56f
+    val tableCenterY = h * 0.72f
+    val tableRadius = w * 0.12f
+
+    // Umbra mesei.
+    drawCircle(
+        color = Color.Black.copy(alpha = 0.3f),
+        radius = tableRadius * 1.05f,
+        center = Offset(tableCenterX, tableCenterY + tableRadius * 0.12f)
+    )
+    // Blatul mesei.
+    drawCircle(color = RoomTheme.metalDark, radius = tableRadius, center = Offset(tableCenterX, tableCenterY))
+    drawCircle(
+        color = RoomTheme.objectOutline,
+        radius = tableRadius,
+        center = Offset(tableCenterX, tableCenterY),
+        style = Stroke(width = 2f)
+    )
+    // Reflexie calda discreta pe masa (lumina automatului ajunge pana aici).
+    drawCircle(
+        color = warmColor.copy(alpha = 0.08f),
+        radius = tableRadius * 0.7f,
+        center = Offset(tableCenterX, tableCenterY)
+    )
+
+    // 4 scaune in jurul mesei (cercuri mici, in cruce).
+    val chairDist = tableRadius * 1.55f
+    val chairRadius = tableRadius * 0.32f
+    val chairOffsets = listOf(
+        Offset(0f, -chairDist), Offset(0f, chairDist),
+        Offset(-chairDist, 0f), Offset(chairDist, 0f)
+    )
+    chairOffsets.forEach { offset ->
+        val cx = tableCenterX + offset.x
+        val cy = tableCenterY + offset.y
+        drawCircle(color = RoomTheme.fabricDark, radius = chairRadius, center = Offset(cx, cy))
+        drawCircle(
+            color = RoomTheme.objectOutline,
+            radius = chairRadius,
+            center = Offset(cx, cy),
+            style = Stroke(width = 1.5f)
+        )
+    }
+
+    drawRoomVignette(w, h)
+}
