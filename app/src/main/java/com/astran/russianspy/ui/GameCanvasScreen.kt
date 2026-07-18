@@ -179,7 +179,15 @@ fun GameCanvasScreen(
                     val topLeft = worldToScreen(room.x, room.y)
                     val sizePx = Size(room.width * TILE_SCALE, room.height * TILE_SCALE)
 
-                    if (room.id == "surveillance" || room.id == "armory" || room.id == "break_room" || room.id == "office1" || room.id == "office2" || room.id == "hub_central" || room.id == "server_room") {
+                    if (room.function == RoomFunction.HALLWAY) {
+                        // Toate holurile folosesc acelasi desen generic (lumini de tavan
+                        // repetate + covor central), indiferent de dimensiune/orientare.
+                        translate(left = topLeft.x, top = topLeft.y) {
+                            clipRect(left = 0f, top = 0f, right = sizePx.width, bottom = sizePx.height) {
+                                drawHallwayDetailed(sizePx.width, sizePx.height)
+                            }
+                        }
+                    } else if (room.id == "surveillance" || room.id == "armory" || room.id == "break_room" || room.id == "office1" || room.id == "office2" || room.id == "hub_central" || room.id == "server_room") {
                         // Camerele detaliate se deseneaza complet vectorial - vezi RoomArt.kt
                         // pentru continutul fiecareia, stil "FBI misterios" consistent.
                         // translate() muta originea (0,0) in coltul camerei, ca desenul
