@@ -581,3 +581,116 @@ fun DrawScope.drawOfficeRoomDetailed(w: Float, h: Float) {
 
     drawRoomVignette(w, h)
 }
+// ============================================================================
+// BIROURI 2 - varianta a doua, layout diferit fata de office1 (evita repetitia)
+// ============================================================================
+
+/**
+ * Geometrie reala (BuildingLayout.kt): camera "office2" e x:650-950, y:2050-2300
+ * (300x250). Singurul acces: hall_office2 intra prin peretele DREAPT, pe y:2125-2225
+ * (local y: 75-175, centrul vertical al peretelui drept) -> acea zona ramane libera.
+ * Spre deosebire de office1 (2 birouri mici + dulap), aici e UN birou mare lipit de
+ * peretele din STANGA plus un colt de asteptare (scaune) jos, pentru variatie vizuala.
+ */
+fun DrawScope.drawOffice2RoomDetailed(w: Float, h: Float) {
+    // Aceeasi paleta neutra ca office1, ca ambele sa se simta din aceeasi cladire.
+    drawRect(color = Color(0xFF14171C), topLeft = Offset.Zero, size = Size(w, h))
+    drawFloorGrid(w, h, cell = w / 8f)
+
+    // --- Biroul mare, lipit de peretele din STANGA, orientat pe verticala ---
+    val deskWidth = w * 0.11f
+    val deskHeight = h * 0.55f
+    val deskLeft = w * 0.06f
+    val deskTop = h * 0.10f
+
+    drawRect(
+        color = Color.Black.copy(alpha = 0.3f),
+        topLeft = Offset(deskLeft - 2f, deskTop + deskHeight),
+        size = Size(deskWidth + 4f, h * 0.02f)
+    )
+    solidRect(Offset(deskLeft, deskTop), Size(deskWidth, deskHeight), RoomTheme.metalDark)
+    drawRect(
+        color = RoomTheme.metalLight.copy(alpha = 0.35f),
+        topLeft = Offset(deskLeft, deskTop),
+        size = Size(deskWidth, deskHeight * 0.06f)
+    )
+
+    // Monitor pe birou (stins, computer obisnuit).
+    val monW = deskWidth * 0.6f
+    val monH = deskHeight * 0.12f
+    val monLeft = deskLeft + deskWidth * 0.2f
+    val monTop = deskTop + deskHeight * 0.12f
+    solidRect(Offset(monLeft, monTop), Size(monW, monH), RoomTheme.metalDarker)
+    drawRect(
+        color = Color(0xFF1A2226),
+        topLeft = Offset(monLeft + monW * 0.12f, monTop + monH * 0.12f),
+        size = Size(monW * 0.76f, monH * 0.76f)
+    )
+
+    // Teanc de dosare pe partea de jos a biroului.
+    val fileColors = listOf(Color(0xFF8A6A3A), Color(0xFF6E5530))
+    for (i in fileColors.indices) {
+        drawRect(
+            color = fileColors[i],
+            topLeft = Offset(deskLeft + deskWidth * 0.15f, deskTop + deskHeight * 0.55f - i * 3f),
+            size = Size(deskWidth * 0.7f, deskHeight * 0.08f)
+        )
+    }
+
+    // Lampa de birou, sursa calda de lumina.
+    val lampX = deskLeft + deskWidth * 0.5f
+    val lampY = deskTop + deskHeight * 0.85f
+    drawRect(
+        brush = Brush.radialGradient(
+            colors = listOf(RoomTheme.accentWarm.copy(alpha = 0.28f), Color.Transparent),
+            center = Offset(lampX, lampY),
+            radius = w * 0.15f
+        ),
+        topLeft = Offset(lampX - w * 0.15f, lampY - w * 0.15f),
+        size = Size(w * 0.3f, w * 0.3f)
+    )
+    drawCircle(RoomTheme.accentWarm, radius = 3.5f, center = Offset(lampX, lampY))
+    drawCircle(RoomTheme.objectOutline, radius = 3.5f, center = Offset(lampX, lampY), style = Stroke(width = 1f))
+
+    // Scaunul biroului (langa el, spre centrul camerei).
+    val chairX = deskLeft + deskWidth + w * 0.06f
+    val chairY = deskTop + deskHeight * 0.5f
+    drawCircle(RoomTheme.fabricDark, radius = w * 0.04f, center = Offset(chairX, chairY))
+    drawCircle(RoomTheme.objectOutline, radius = w * 0.04f, center = Offset(chairX, chairY), style = Stroke(width = 1.5f))
+
+    // --- Colt de asteptare, jos-centru/dreapta (zona libera de acces, sub zona de hol) ---
+    // 2 scaune simple, distincte de scaunul de birou (fara birou langa ele).
+    val waitChairRadius = w * 0.032f
+    val waitY = h * 0.85f
+    val waitPositions = listOf(w * 0.38f, w * 0.50f)
+    waitPositions.forEach { wx ->
+        drawCircle(RoomTheme.fabricDark, radius = waitChairRadius, center = Offset(wx, waitY))
+        drawCircle(RoomTheme.objectOutline, radius = waitChairRadius, center = Offset(wx, waitY), style = Stroke(width = 1.5f))
+    }
+    // O masuta joasa langa scaunele de asteptare.
+    val lowTableW = w * 0.08f
+    val lowTableH = h * 0.05f
+    solidRect(
+        Offset(w * 0.44f - lowTableW / 2f, waitY - h * 0.11f),
+        Size(lowTableW, lowTableH),
+        RoomTheme.metalDark
+    )
+
+    // --- Un dulap ingust de dosare, sus-centru (zona libera) ---
+    val cabinetW = w * 0.10f
+    val cabinetH = h * 0.20f
+    val cabinetLeft = w * 0.40f
+    val cabinetTop = h * 0.04f
+    solidRect(Offset(cabinetLeft, cabinetTop), Size(cabinetW, cabinetH), RoomTheme.metalDark)
+    for (i in 1..2) {
+        val ly = cabinetTop + cabinetH * (i / 3f)
+        drawLine(
+            RoomTheme.objectOutline.copy(alpha = 0.6f),
+            Offset(cabinetLeft, ly),
+            Offset(cabinetLeft + cabinetW, ly),
+            strokeWidth = 1.5f
+        )
+    }
+
+    drawRoomVignette(w, h)
+}
