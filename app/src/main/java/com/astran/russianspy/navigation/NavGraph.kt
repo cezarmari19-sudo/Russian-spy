@@ -12,8 +12,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.astran.russianspy.model.RoomFunction
+import com.astran.russianspy.ui.FindLobbyScreen
+import com.astran.russianspy.ui.FriendsScreen
 import com.astran.russianspy.ui.GameCanvasScreen
 import com.astran.russianspy.ui.LobbyScreen
+import com.astran.russianspy.ui.MainMenuScreen
+import com.astran.russianspy.ui.SettingsScreen
 import com.astran.russianspy.ui.SurveillanceMonitorsScreen
 import com.astran.russianspy.ui.WaitingRoomScreen
 import com.astran.russianspy.ui.tasks.SurveillanceScreen
@@ -24,14 +28,47 @@ fun RussianSpyNavGraph() {
     val navController = rememberNavController()
     val gameViewModel: GameViewModel = viewModel()
 
-    NavHost(navController = navController, startDestination = Routes.LOBBY) {
+    NavHost(navController = navController, startDestination = Routes.MAIN_MENU) {
+
+        composable(Routes.MAIN_MENU) {
+            MainMenuScreen(
+                onStartClick = { navController.navigate(Routes.FIND_LOBBY) },
+                onCreateLobbyClick = { navController.navigate(Routes.LOBBY) },
+                onSettingsClick = { navController.navigate(Routes.SETTINGS) },
+                onFriendsClick = { navController.navigate(Routes.FRIENDS) }
+            )
+        }
+
+        composable(Routes.SETTINGS) {
+            SettingsScreen(
+                onDone = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.FRIENDS) {
+            FriendsScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.FIND_LOBBY) {
+            FindLobbyScreen(
+                viewModel = gameViewModel,
+                onRoomReady = {
+                    navController.navigate(Routes.WAITING_ROOM)
+                },
+                onBack = { navController.popBackStack() },
+                onNeedsName = { navController.navigate(Routes.SETTINGS) }
+            )
+        }
 
         composable(Routes.LOBBY) {
             LobbyScreen(
                 viewModel = gameViewModel,
                 onRoomReady = {
                     navController.navigate(Routes.WAITING_ROOM)
-                }
+                },
+                onNeedsName = { navController.navigate(Routes.SETTINGS) }
             )
         }
 
@@ -40,7 +77,7 @@ fun RussianSpyNavGraph() {
                 viewModel = gameViewModel,
                 onGameStarted = {
                     navController.navigate(Routes.GAME_MAP) {
-                        popUpTo(Routes.LOBBY) { inclusive = true }
+                        popUpTo(Routes.MAIN_MENU) { inclusive = false }
                     }
                 }
             )
