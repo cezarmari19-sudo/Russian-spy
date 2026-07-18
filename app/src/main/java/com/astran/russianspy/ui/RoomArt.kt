@@ -1003,3 +1003,101 @@ fun DrawScope.drawHallwayDetailed(w: Float, h: Float) {
         size = Size(w, h)
     )
 }
+// ============================================================================
+// SALA DE INTALNIRI - masa mare, ecran de prezentare, ton oficial-neutru
+// ============================================================================
+
+/**
+ * Geometrie reala (BuildingLayout.kt): camera "meeting_room" e x:2100-2400, y:1350-1650
+ * (300x300, singura camera patrata). 2 accese, ambele centrate pe axa X:
+ * - hall_meeting_lab intra prin peretele de SUS, x:2200-2300 (local x:100-200)
+ * - hall_meeting intra prin peretele de JOS, x:2200-2300 (local x:100-200)
+ * Masa mare ovala e asezata central, dar ingusta pe verticala (nu blocheaza coridorul
+ * central sus-jos), cu scaune doar pe laturile STANGA si DREAPTA (fara scaune sus/jos,
+ * unde ar sta exact in calea celor 2 accese).
+ */
+fun DrawScope.drawMeetingRoomDetailed(w: Float, h: Float) {
+    // Podeaua: albastru-gri neutru, oficial - diferit de tonul cald al Pauzei si cel
+    // rece-tehnic al Serverelor, aici e formal, sobru.
+    drawRect(color = Color(0xFF15191E), topLeft = Offset.Zero, size = Size(w, h))
+    drawFloorGrid(w, h, cell = w / 9f)
+
+    // --- Ecran de prezentare pe peretele din STANGA (zona fara acces) ---
+    val screenW = w * 0.05f
+    val screenH = h * 0.30f
+    val screenLeft = w * 0.03f
+    val screenTop = h * 0.35f
+    solidRect(Offset(screenLeft, screenTop), Size(screenW, screenH), RoomTheme.metalDarker)
+    drawRect(
+        color = Color(0xFF1A2226),
+        topLeft = Offset(screenLeft + screenW * 0.15f, screenTop + screenH * 0.08f),
+        size = Size(screenW * 0.7f, screenH * 0.84f)
+    )
+    // Lumina slaba, neutra (nu calda, nu verde) - ecranul e stins/standby.
+    drawRect(
+        brush = Brush.radialGradient(
+            colors = listOf(Color(0xFF6C7A85).copy(alpha = 0.10f), Color.Transparent),
+            center = Offset(screenLeft + screenW / 2f, screenTop + screenH / 2f),
+            radius = w * 0.12f
+        ),
+        topLeft = Offset(screenLeft - w * 0.07f, screenTop - w * 0.07f),
+        size = Size(w * 0.19f, w * 0.19f)
+    )
+
+    // --- Masa mare ovala, centrata, ingusta pe verticala (lasa coridorul central liber) ---
+    val tableCenterX = w * 0.5f
+    val tableCenterY = h * 0.5f
+    val tableW = w * 0.58f
+    val tableH = h * 0.34f
+
+    // Umbra mesei.
+    drawOval(
+        color = Color.Black.copy(alpha = 0.3f),
+        topLeft = Offset(tableCenterX - tableW / 2f, tableCenterY - tableH / 2f + h * 0.02f),
+        size = Size(tableW, tableH)
+    )
+    drawOval(
+        color = RoomTheme.metalDark,
+        topLeft = Offset(tableCenterX - tableW / 2f, tableCenterY - tableH / 2f),
+        size = Size(tableW, tableH)
+    )
+    drawOval(
+        color = RoomTheme.objectOutline,
+        topLeft = Offset(tableCenterX - tableW / 2f, tableCenterY - tableH / 2f),
+        size = Size(tableW, tableH),
+        style = Stroke(width = 2f)
+    )
+    // Reflexie neutra discreta pe masa.
+    drawOval(
+        color = Color.White.copy(alpha = 0.03f),
+        topLeft = Offset(tableCenterX - tableW * 0.35f, tableCenterY - tableH * 0.3f),
+        size = Size(tableW * 0.7f, tableH * 0.5f)
+    )
+
+    // --- Scaune doar pe laturile STANGA si DREAPTA ale mesei (nu sus/jos) ---
+    val chairRadius = w * 0.028f
+    val chairsPerSide = 3
+    for (i in 0 until chairsPerSide) {
+        val t = (i + 0.5f) / chairsPerSide // 0..1 de-a lungul lungimii mesei
+        val cy = tableCenterY - tableH * 0.42f + t * tableH * 0.84f
+
+        // Scaun stanga.
+        val leftX = tableCenterX - tableW * 0.5f - w * 0.045f
+        drawCircle(RoomTheme.fabricDark, radius = chairRadius, center = Offset(leftX, cy))
+        drawCircle(RoomTheme.objectOutline, radius = chairRadius, center = Offset(leftX, cy), style = Stroke(width = 1.5f))
+
+        // Scaun dreapta.
+        val rightX = tableCenterX + tableW * 0.5f + w * 0.045f
+        drawCircle(RoomTheme.fabricDark, radius = chairRadius, center = Offset(rightX, cy))
+        drawCircle(RoomTheme.objectOutline, radius = chairRadius, center = Offset(rightX, cy), style = Stroke(width = 1.5f))
+    }
+
+    // --- Cateva dosare/laptop pe masa, ca detaliu de atmosfera ---
+    drawRect(
+        color = Color(0xFF6C7A85).copy(alpha = 0.5f),
+        topLeft = Offset(tableCenterX - w * 0.05f, tableCenterY - h * 0.03f),
+        size = Size(w * 0.06f, h * 0.05f)
+    )
+
+    drawRoomVignette(w, h)
+}
