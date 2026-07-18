@@ -3,7 +3,7 @@ import string
 import time
 from typing import Optional
 
-from models import GameRoom, Player, Role, RoomFunction, Room
+from models import GameRoom, GamePhase, Player, Role, RoomFunction, Room
 
 
 # ATENTIE: aceste coordonate (x, y, width, height) TREBUIE sa ramana identice cu
@@ -173,6 +173,27 @@ class GameManager:
 
     def get_room(self, room_code: str) -> Optional[GameRoom]:
         return self.rooms.get(room_code)
+
+    def list_public_rooms(self, max_results: int = 8) -> list[GameRoom]:
+        """Lista de lobby-uri publice disponibile, stil Among Us in beta: fara
+        matchmaking sofisticat, fara scor - doar camere PUBLICE, in faza LOBBY,
+        cu loc liber (nu pline), alese RANDOM din toate cele disponibile. Asta
+        evita problema unei sortari fixe (ex: "cele mai goale primele"), care ar
+        lasa mereu camerele aproape pline neobservate si ar impiedica sa se
+        completeze vreodata un lobby - la fiecare refresh manual, selectia se
+        schimba, dand sansa si camerelor goale si celor aproape pline sa fie
+        vazute si completate.
+        """
+        available = [
+            room for room in self.rooms.values()
+            if not room.is_private
+            and room.phase == GamePhase.LOBBY
+            and len(room.players) < MAX_PLAYERS
+            and len(room.players) > 0
+        ]
+        if len(available) <= max_results:
+            return available
+        return random.sample(available, k=max_results)
 
 
 # instanta globala, folosita de main.py
