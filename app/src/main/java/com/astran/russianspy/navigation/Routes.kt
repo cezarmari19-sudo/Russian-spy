@@ -1,6 +1,10 @@
 package com.astran.russianspy.navigation
 
 object Routes {
+    const val MAIN_MENU = "main_menu"
+    const val FIND_LOBBY = "find_lobby"
+    const val SETTINGS = "settings"
+    const val FRIENDS = "friends"
     const val LOBBY = "lobby"
     const val WAITING_ROOM = "waiting_room"
     const val ROLE_REVEAL = "role_reveal"
