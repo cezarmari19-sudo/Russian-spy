@@ -17,22 +17,23 @@ import androidx.compose.ui.unit.sp
  * Ecranul principal, primul care apare la pornirea aplicatiei (stil Among Us):
  * o bara subtire pe partea STANGA (nu un sfert din latime cum ar suna literal -
  * un sfert ar fi prea lat si ar concura vizual cu butoanele mari; aici e o bara
- * ingusta, fixa, cu iconite/text vertical) continand butoanele de SETARI si
- * PRIETENI, iar restul ecranului (dreapta) contine titlul jocului si cele 2
- * actiuni principale: START (-> gaseste lobby, introduci un cod) si CREEAZA LOBBY
- * (-> creezi o camera noua, primesti un cod).
+ * ingusta, fixa, cu iconite/text vertical) continand butoanele de SETARI,
+ * PRIETENI si LOBBY-URI, iar restul ecranului (dreapta) contine titlul jocului
+ * si cele 2 actiuni principale: START (-> gaseste lobby, introduci un cod) si
+ * CREEAZA LOBBY (-> creezi o camera noua, primesti un cod).
  */
 @Composable
 fun MainMenuScreen(
     onStartClick: () -> Unit,
     onCreateLobbyClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onFriendsClick: () -> Unit
+    onFriendsClick: () -> Unit,
+    onLobbiesClick: () -> Unit
 ) {
     Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0D0F12)) {
         Row(modifier = Modifier.fillMaxSize()) {
 
-            // --- Bara subtire din stanga: Setari + Prieteni ---
+            // --- Bara subtire din stanga: Setari + Prieteni + Lobby-uri ---
             Column(
                 modifier = Modifier
                     .fillMaxHeight()
@@ -55,6 +56,14 @@ fun MainMenuScreen(
                     label = "Prieteni",
                     icon = "👥",
                     onClick = onFriendsClick
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                SidebarIconButton(
+                    label = "Lobby-uri",
+                    icon = "📋",
+                    onClick = onLobbiesClick
                 )
             }
 
