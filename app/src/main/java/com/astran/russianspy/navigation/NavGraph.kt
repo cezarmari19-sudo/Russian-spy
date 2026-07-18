@@ -17,6 +17,7 @@ import com.astran.russianspy.ui.FriendsScreen
 import com.astran.russianspy.ui.GameCanvasScreen
 import com.astran.russianspy.ui.LobbyScreen
 import com.astran.russianspy.ui.MainMenuScreen
+import com.astran.russianspy.ui.PublicLobbiesScreen
 import com.astran.russianspy.ui.SettingsScreen
 import com.astran.russianspy.ui.SurveillanceMonitorsScreen
 import com.astran.russianspy.ui.WaitingRoomScreen
@@ -35,7 +36,19 @@ fun RussianSpyNavGraph() {
                 onStartClick = { navController.navigate(Routes.FIND_LOBBY) },
                 onCreateLobbyClick = { navController.navigate(Routes.LOBBY) },
                 onSettingsClick = { navController.navigate(Routes.SETTINGS) },
-                onFriendsClick = { navController.navigate(Routes.FRIENDS) }
+                onFriendsClick = { navController.navigate(Routes.FRIENDS) },
+                onLobbiesClick = { navController.navigate(Routes.PUBLIC_LOBBIES) }
+            )
+        }
+
+        composable(Routes.PUBLIC_LOBBIES) {
+            PublicLobbiesScreen(
+                viewModel = gameViewModel,
+                onRoomReady = {
+                    navController.navigate(Routes.WAITING_ROOM)
+                },
+                onBack = { navController.popBackStack() },
+                onNeedsName = { navController.navigate(Routes.SETTINGS) }
             )
         }
 
