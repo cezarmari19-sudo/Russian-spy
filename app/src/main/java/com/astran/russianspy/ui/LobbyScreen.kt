@@ -1,5 +1,6 @@
 package com.astran.russianspy.ui
 
+import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -7,21 +8,42 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.astran.russianspy.data.PlayerPrefs
 import com.astran.russianspy.viewmodel.GameViewModel
 
+/**
+ * Ecran "Creeaza Lobby": creeaza automat o camera noua, folosind numele salvat
+ * in PlayerPrefs (nu se mai cere numele aici - vine din Setari). Daca nu exista
+ * inca un nume salvat, redirectioneaza catre Setari inainte sa continue.
+ */
 @Composable
 fun LobbyScreen(
     viewModel: GameViewModel,
-    onRoomReady: () -> Unit
+    onRoomReady: () -> Unit,
+    onNeedsName: () -> Unit
 ) {
-    var playerName by remember { mutableStateOf("") }
-    var roomCode by remember { mutableStateOf("") }
+    val context: Context = LocalContext.current
 
     val gameState by viewModel.gameState
     val errorMessage by viewModel.errorMessage
+
+    var hasStartedCreating by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (!PlayerPrefs.hasPlayerName(context)) {
+            onNeedsName()
+            return@LaunchedEffect
+        }
+        if (!hasStartedCreating) {
+            hasStartedCreating = true
+            val playerName = PlayerPrefs.getPlayerName(context)
+            viewModel.createRoom(playerName)
+        }
+    }
 
     LaunchedEffect(gameState) {
         if (gameState != null) {
@@ -30,10 +52,6 @@ fun LobbyScreen(
     }
 
     Surface(modifier = Modifier.fillMaxSize()) {
-        // Coloana e acum scrollabila pe verticala, ca ecranul sa nu mai "taie"
-        // continutul cand inaltimea disponibila e mica (ex: landscape sau
-        // telefoane mici) - inainte, in acele cazuri, butonul "Intra in camera"
-        // devenea complet inaccesibil, fara nicio posibilitate de scroll.
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -43,63 +61,19 @@ fun LobbyScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "RUSSIAN SPY",
-                fontSize = 32.sp,
+                text = "SE CREEAZA CAMERA...",
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            OutlinedTextField(
-                value = playerName,
-                onValueChange = { playerName = it },
-                label = { Text("Numele tau") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Button(
-                onClick = { viewModel.createRoom(playerName) },
-                enabled = playerName.isNotBlank(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Creeaza camera noua")
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Text("SAU")
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            OutlinedTextField(
-                value = roomCode,
-                onValueChange = { roomCode = it.uppercase() },
-                label = { Text("Cod camera") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Button(
-                onClick = { viewModel.joinRoom(playerName, roomCode) },
-                enabled = playerName.isNotBlank() && roomCode.isNotBlank(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Intra in camera")
-            }
+            CircularProgressIndicator()
 
             errorMessage?.let { msg ->
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
                 Text(text = msg, color = MaterialTheme.colorScheme.error)
             }
-
-            // Spatiu mic la final, ca ultimul buton sa nu ramana lipit chiar de
-            // marginea ecranului cand se face scroll pana jos de tot.
-            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
