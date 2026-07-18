@@ -694,3 +694,118 @@ fun DrawScope.drawOffice2RoomDetailed(w: Float, h: Float) {
 
     drawRoomVignette(w, h)
 }
+// ============================================================================
+// HOL CENTRAL - hub de trecere, fara task, doar atmosfera
+// ============================================================================
+
+/**
+ * Geometrie reala (BuildingLayout.kt): camera "hub_central" e x:2000-2500, y:2000-2400
+ * (500x400) - cea mai mare camera din harta. Are 4 accese, cate unul pe fiecare perete,
+ * toate centrate pe mijlocul peretelui respectiv:
+ * - hall_meeting intra SUS, x:2200-2300 (local x:200-300)
+ * - hall_entrance intra JOS, x:2200-2300 (local x:200-300)
+ * - hall_office1 intra STANGA, y:2125-2225 (local y:125-225)
+ * - hall_break intra DREAPTA, y:2125-2225 (local y:125-225)
+ * Centrul ramane complet liber (e o zona de trecere, nu are task). Decorul (banci,
+ * plante, embleme) se aseaza STRICT in cele 4 colturi, care nu sunt atinse de niciun hol.
+ */
+fun DrawScope.drawHubCentralDetailed(w: Float, h: Float) {
+    // Podeaua: gri neutru, putin mai deschis decat restul cladirii - un hol oficial,
+    // nu o camera secreta, dar tot sobru si intunecat fata de un joc obisnuit.
+    drawRect(color = Color(0xFF191C20), topLeft = Offset.Zero, size = Size(w, h))
+    drawFloorGrid(w, h, cell = w / 14f)
+
+    // --- Emblema mare, discreta, in centrul podelei (element de atmosfera, fara sa
+    // blocheze vizual trecerea prin hol) ---
+    drawCircle(
+        color = Color.White.copy(alpha = 0.03f),
+        radius = w * 0.11f,
+        center = Offset(w * 0.5f, h * 0.5f),
+        style = Stroke(width = 3f)
+    )
+    drawCircle(
+        color = Color.White.copy(alpha = 0.02f),
+        radius = w * 0.09f,
+        center = Offset(w * 0.5f, h * 0.5f),
+        style = Stroke(width = 1.5f)
+    )
+
+    // --- Colt STANGA-SUS: banca de asteptare + planta ---
+    run {
+        val benchW = w * 0.14f
+        val benchH = h * 0.06f
+        val benchLeft = w * 0.05f
+        val benchTop = h * 0.06f
+        drawRect(
+            color = Color.Black.copy(alpha = 0.25f),
+            topLeft = Offset(benchLeft - 2f, benchTop + benchH),
+            size = Size(benchW + 4f, h * 0.012f)
+        )
+        solidRect(Offset(benchLeft, benchTop), Size(benchW, benchH), RoomTheme.fabricDark)
+
+        // Planta - un ghiveci simplu cu un cerc verde inchis deasupra.
+        val plantX = benchLeft + benchW + w * 0.03f
+        val plantY = benchTop + benchH * 0.5f
+        drawRect(
+            color = RoomTheme.metalDark,
+            topLeft = Offset(plantX - w * 0.012f, plantY),
+            size = Size(w * 0.024f, h * 0.025f)
+        )
+        drawCircle(Color(0xFF1F3D24), radius = w * 0.022f, center = Offset(plantX, plantY - h * 0.01f))
+        drawCircle(Color(0xFF2A5030), radius = w * 0.014f, center = Offset(plantX - w * 0.008f, plantY - h * 0.02f))
+    }
+
+    // --- Colt DREAPTA-SUS: panou/tablou pe perete + o lampa de perete discreta ---
+    run {
+        val panelW = w * 0.10f
+        val panelH = h * 0.07f
+        val panelLeft = w * 0.85f
+        val panelTop = h * 0.05f
+        solidRect(Offset(panelLeft, panelTop), Size(panelW, panelH), RoomTheme.metalDarker)
+        drawRect(
+            color = Color(0xFF2A3038),
+            topLeft = Offset(panelLeft + panelW * 0.1f, panelTop + panelH * 0.1f),
+            size = Size(panelW * 0.8f, panelH * 0.8f)
+        )
+        // Lumina de perete discreta deasupra panoului.
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(Color.White.copy(alpha = 0.06f), Color.Transparent),
+                center = Offset(panelLeft + panelW / 2f, panelTop),
+                radius = w * 0.12f
+            ),
+            topLeft = Offset(panelLeft - w * 0.06f, panelTop - w * 0.12f),
+            size = Size(panelW + w * 0.12f, w * 0.18f)
+        )
+    }
+
+    // --- Colt STANGA-JOS: alta banca, orientata diferit ---
+    run {
+        val benchW = h * 0.06f
+        val benchH = w * 0.14f
+        val benchLeft = w * 0.05f
+        val benchTop = h * 0.80f
+        drawRect(
+            color = Color.Black.copy(alpha = 0.25f),
+            topLeft = Offset(benchLeft - 2f, benchTop + benchH),
+            size = Size(benchW + 4f, h * 0.012f)
+        )
+        solidRect(Offset(benchLeft, benchTop), Size(benchW, benchH), RoomTheme.fabricDark)
+    }
+
+    // --- Colt DREAPTA-JOS: planta mare, decor final ---
+    run {
+        val plantX = w * 0.91f
+        val plantY = h * 0.87f
+        drawRect(
+            color = RoomTheme.metalDark,
+            topLeft = Offset(plantX - w * 0.018f, plantY),
+            size = Size(w * 0.036f, h * 0.04f)
+        )
+        drawCircle(Color(0xFF1F3D24), radius = w * 0.032f, center = Offset(plantX, plantY - h * 0.015f))
+        drawCircle(Color(0xFF2A5030), radius = w * 0.020f, center = Offset(plantX - w * 0.012f, plantY - h * 0.032f))
+        drawCircle(Color(0xFF2A5030), radius = w * 0.016f, center = Offset(plantX + w * 0.014f, plantY - h * 0.028f))
+    }
+
+    drawRoomVignette(w, h)
+}
