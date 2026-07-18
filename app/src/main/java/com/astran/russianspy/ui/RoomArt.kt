@@ -923,3 +923,83 @@ fun DrawScope.drawServerRoomDetailed(w: Float, h: Float) {
 
     drawRoomVignette(w, h)
 }
+// ============================================================================
+// HOLURI - stil unic, generic, aplicat pe orice hol indiferent de dimensiune
+// ============================================================================
+
+/**
+ * Deseneaza un hol generic: podea sobra, un covor central discret pe toata lungimea,
+ * si lumini de tavan (spoturi) repetate la intervale regulate. Functioneaza automat
+ * atat pentru holuri orizontale (late, joase) cat si verticale (inguste, lungi) -
+ * detecteaza orientarea din raportul w/h si adapteaza directia covorului si spatierea
+ * luminilor de-a lungul axei lungi.
+ *
+ * NU foloseste geometria unui hol anume (spre deosebire de camerele cu task) - e
+ * generica, aplicata identic la toate cele 12 holuri din BuildingLayout.kt, ca sa
+ * ramana simplu de intretinut si suficient de ieftin de desenat cand mai multe
+ * holuri sunt vizibile simultan in raza jucatorului.
+ */
+fun DrawScope.drawHallwayDetailed(w: Float, h: Float) {
+    // Podeaua: gri neutru inchis, mai deschis decat camerele secrete dar tot sobru.
+    drawRect(color = Color(0xFF16181B), topLeft = Offset.Zero, size = Size(w, h))
+
+    val isHorizontal = w >= h
+
+    // Grid fin de podea, orientat pe axa scurta (perpendicular pe directia de mers).
+    val cell = if (isHorizontal) h / 3f else w / 3f
+    drawFloorGrid(w, h, cell = cell.coerceAtLeast(8f))
+
+    // --- Covor central discret, pe toata lungimea holului ---
+    val carpetThicknessRatio = 0.28f
+    if (isHorizontal) {
+        val carpetH = h * carpetThicknessRatio
+        drawRect(
+            color = Color.White.copy(alpha = 0.025f),
+            topLeft = Offset(0f, h / 2f - carpetH / 2f),
+            size = Size(w, carpetH)
+        )
+    } else {
+        val carpetW = w * carpetThicknessRatio
+        drawRect(
+            color = Color.White.copy(alpha = 0.025f),
+            topLeft = Offset(w / 2f - carpetW / 2f, 0f),
+            size = Size(carpetW, h)
+        )
+    }
+
+    // --- Lumini de tavan (spoturi), repetate la interval regulat de-a lungul axei lungi ---
+    val longLength = if (isHorizontal) w else h
+    val spotSpacing = 140f // distanta intre spoturi, in "unitati ecran" locale
+    val spotCount = maxOf(1, (longLength / spotSpacing).toInt())
+    val actualSpacing = longLength / spotCount
+
+    for (i in 0 until spotCount) {
+        val posAlong = actualSpacing * (i + 0.5f)
+        val center = if (isHorizontal) Offset(posAlong, h / 2f) else Offset(w / 2f, posAlong)
+        val spotRadius = (if (isHorizontal) h else w) * 0.9f
+
+        drawRect(
+            brush = Brush.radialGradient(
+                colors = listOf(Color.White.copy(alpha = 0.05f), Color.Transparent),
+                center = center,
+                radius = spotRadius
+            ),
+            topLeft = Offset(center.x - spotRadius, center.y - spotRadius),
+            size = Size(spotRadius * 2f, spotRadius * 2f)
+        )
+        // Punctul sursa al spotului (mic, discret).
+        drawCircle(Color.White.copy(alpha = 0.12f), radius = 2.5f, center = center)
+    }
+
+    // Vinieta usoara si pe holuri, pentru consistenta cu restul cladirii (mai slaba
+    // decat la camerele cu task, ca sa nu intunece prea mult zonele de trecere).
+    drawRect(
+        brush = Brush.radialGradient(
+            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.25f)),
+            center = Offset(w / 2f, h / 2f),
+            radius = maxOf(w, h) * 0.85f
+        ),
+        topLeft = Offset.Zero,
+        size = Size(w, h)
+    )
+}
