@@ -3,7 +3,7 @@ import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from game_manager import game_manager
+from game_manager import game_manager, MAX_PLAYERS
 
 app = FastAPI()
 
@@ -194,3 +194,34 @@ async def join_room(room_code: str, player_id: str, player_name: str):
     if error:
         return {"error": error}
     return {"success": True}
+
+
+@app.get("/public_rooms")
+async def public_rooms():
+    """Lista de lobby-uri publice disponibile (stil Among Us in beta - selectie
+    random, fara scor complex). Apelat doar la refresh MANUAL din ecranul de
+    lobby-uri, nu automat/periodic, ca sa nu incarce serverul degeaba."""
+    rooms = game_manager.list_public_rooms()
+    return {
+        "rooms": [
+            {
+                "roomCode": r.room_code,
+                "playerCount": len(r.players),
+                "maxPlayers": MAX_PLAYERS,
+            }
+            for r in rooms
+        ]
+    }
+
+
+@app.post("/set_room_privacy")
+async def set_room_privacy(room_code: str, player_id: str, is_private: bool):
+    """Doar host-ul poate schimba privat/public. Camerele private nu apar in
+    /public_rooms - se poate intra in ele doar cu codul exact."""
+    room = game_manager.get_room(room_code)
+    if room is None:
+        return {"error": "Camera nu exista"}
+    if room.host_id != player_id:
+        return {"error": "Doar host-ul poate schimba aceasta setare"}
+    room.is_private = is_private
+    return {"success": True, "isPrivate": room.is_private}
