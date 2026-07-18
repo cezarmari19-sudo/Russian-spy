@@ -3,6 +3,7 @@ package com.astran.russianspy.navigation
 object Routes {
     const val MAIN_MENU = "main_menu"
     const val FIND_LOBBY = "find_lobby"
+    const val PUBLIC_LOBBIES = "public_lobbies"
     const val SETTINGS = "settings"
     const val FRIENDS = "friends"
     const val LOBBY = "lobby"
