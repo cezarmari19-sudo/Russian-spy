@@ -21,6 +21,7 @@ sealed class ServerEvent {
     data class SurveillanceCamerasAssigned(val spots: List<CameraSpotInfo>) : ServerEvent()
     data class PlayerDisconnected(val playerId: String) : ServerEvent()
     data class LobbyUpdate(val players: List<LobbyPlayerInfo>) : ServerEvent()
+    object RoomDeleted : ServerEvent()
     data class Error(val message: String) : ServerEvent()
 }
 
@@ -42,6 +43,13 @@ data class CameraSpotInfo(
     val roomId: String,
     val x: Float,
     val y: Float
+)
+
+/** O intrare din lista de lobby-uri publice disponibile (ecranul stil Among Us). */
+data class PublicRoomInfo(
+    val roomCode: String,
+    val playerCount: Int,
+    val maxPlayers: Int
 )
 
 class NetworkClient(
@@ -79,6 +87,61 @@ class NetworkClient(
 
     fun joinRoom(playerId: String, playerName: String, roomCode: String, onResult: (success: Boolean, error: String?) -> Unit) {
         val url = "${ServerConfig.HTTP_BASE}/join_room?room_code=$roomCode&player_id=$playerId&player_name=${playerName}"
+        val request = Request.Builder().url(url).post(RequestBody.create(null, ByteArray(0))).build()
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: java.io.IOException) {
+                onResult(false, "Nu ma pot conecta la server: ${e.message}")
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                if (body == null) {
+                    onResult(false, "Raspuns gol de la server")
+                    return
+                }
+                val json = JSONObject(body)
+                if (json.has("error")) {
+                    onResult(false, json.getString("error"))
+                } else {
+                    onResult(true, null)
+                }
+            }
+        })
+    }
+
+    /** Lista de lobby-uri publice disponibile, apelata doar la refresh MANUAL (nu automat). */
+    fun fetchPublicRooms(onResult: (rooms: List<PublicRoomInfo>?, error: String?) -> Unit) {
+        val url = "${ServerConfig.HTTP_BASE}/public_rooms"
+        val request = Request.Builder().url(url).get().build()
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: java.io.IOException) {
+                onResult(null, "Nu ma pot conecta la server: ${e.message}")
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                if (body == null) {
+                    onResult(null, "Raspuns gol de la server")
+                    return
+                }
+                val json = JSONObject(body)
+                val arr = json.getJSONArray("rooms")
+                val list = (0 until arr.length()).map { i ->
+                    val entry = arr.getJSONObject(i)
+                    PublicRoomInfo(
+                        roomCode = entry.getString("roomCode"),
+                        playerCount = entry.getInt("playerCount"),
+                        maxPlayers = entry.getInt("maxPlayers")
+                    )
+                }
+                onResult(list, null)
+            }
+        })
+    }
+
+    /** Comuta o camera intre public/privat. Doar host-ul poate reusi (verificat si pe server). */
+    fun setRoomPrivacy(roomCode: String, playerId: String, isPrivate: Boolean, onResult: (success: Boolean, error: String?) -> Unit) {
+        val url = "${ServerConfig.HTTP_BASE}/set_room_privacy?room_code=$roomCode&player_id=$playerId&is_private=$isPrivate"
         val request = Request.Builder().url(url).post(RequestBody.create(null, ByteArray(0))).build()
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: java.io.IOException) {
@@ -181,6 +244,7 @@ class NetworkClient(
                 onEvent(ServerEvent.LobbyUpdate(players))
             }
             "error" -> onEvent(ServerEvent.Error(json.optString("message", "Eroare necunoscuta")))
+            "room_deleted" -> onEvent(ServerEvent.RoomDeleted)
         }
     }
 
@@ -208,6 +272,12 @@ class NetworkClient(
     fun sendSpyIntel() {
         send(JSONObject().apply {
             put("action", "spy_send_intel")
+        })
+    }
+
+    fun sendDeleteRoom() {
+        send(JSONObject().apply {
+            put("action", "delete_room")
         })
     }
 
