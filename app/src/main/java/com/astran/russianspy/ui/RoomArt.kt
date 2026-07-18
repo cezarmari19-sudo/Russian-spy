@@ -809,3 +809,117 @@ fun DrawScope.drawHubCentralDetailed(w: Float, h: Float) {
 
     drawRoomVignette(w, h)
 }
+// ============================================================================
+// CAMERA SERVERE - rack-uri tehnice, lumina rece albastru-cyan
+// ============================================================================
+
+/**
+ * Geometrie reala (BuildingLayout.kt): camera "server_room" e x:2900-3200, y:1100-1350
+ * (300x250). Singurul acces: hall_server intra prin peretele de JOS, pe x:3000-3100
+ * (local x:100-200, centru) -> acea zona ramane libera. Restul camerei (sus, stanga,
+ * dreapta) e complet liber pentru rack-uri, deci punem 3 rack-uri mari lipite de
+ * peretele de SUS si cate un rack mai mic pe fiecare parte laterala.
+ */
+fun DrawScope.drawServerRoomDetailed(w: Float, h: Float) {
+    // Podeaua: albastru-cyan foarte inchis, aproape negru - camera tehnica, rece.
+    drawRect(color = Color(0xFF0A1418), topLeft = Offset.Zero, size = Size(w, h))
+    drawFloorGrid(w, h, cell = w / 9f)
+
+    val cyanGlow = Color(0xFF3AC9E8)
+    val cyanGlowDim = Color(0xFF1E7A8C)
+
+    // --- 3 rack-uri mari, lipite de peretele de SUS ---
+    val rackCount = 3
+    val rackGap = w * 0.03f
+    val racksAreaWidth = w * 0.86f
+    val racksAreaLeft = w * 0.07f
+    val rackWidth = (racksAreaWidth - rackGap * (rackCount - 1)) / rackCount
+    val rackHeight = h * 0.42f
+    val rackTop = h * 0.04f
+
+    for (i in 0 until rackCount) {
+        val rx = racksAreaLeft + i * (rackWidth + rackGap)
+
+        drawRect(
+            color = Color.Black.copy(alpha = 0.35f),
+            topLeft = Offset(rx - 2f, rackTop + rackHeight),
+            size = Size(rackWidth + 4f, h * 0.015f)
+        )
+        solidRect(Offset(rx, rackTop), Size(rackWidth, rackHeight), RoomTheme.metalDarker)
+
+        // Randuri de LED-uri pe fiecare rack (simuland unitati de server active).
+        val ledRows = 6
+        for (row in 0 until ledRows) {
+            val ly = rackTop + rackHeight * 0.08f + row * (rackHeight * 0.82f / ledRows)
+            // Fiecare rand are 2-3 LED-uri de culori diferite (status simulat).
+            val ledColor = when {
+                row % 5 == 0 -> Color(0xFFB33A3A) // ocazional un LED rosu (alerta minora)
+                row % 2 == 0 -> cyanGlow
+                else -> cyanGlowDim
+            }
+            drawRect(
+                color = ledColor,
+                topLeft = Offset(rx + rackWidth * 0.12f, ly),
+                size = Size(rackWidth * 0.12f, rackHeight * 0.025f)
+            )
+            drawRect(
+                color = RoomTheme.metalLight.copy(alpha = 0.4f),
+                topLeft = Offset(rx + rackWidth * 0.3f, ly),
+                size = Size(rackWidth * 0.55f, rackHeight * 0.025f)
+            )
+        }
+
+        // Glow tehnic (cyan) in jurul rack-ului din mijloc - sursa principala de lumina.
+        if (i == 1) {
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(cyanGlow.copy(alpha = 0.14f), Color.Transparent),
+                    center = Offset(rx + rackWidth / 2f, rackTop + rackHeight / 2f),
+                    radius = rackWidth * 1.6f
+                ),
+                topLeft = Offset(rx - rackWidth * 0.5f, rackTop - rackHeight * 0.3f),
+                size = Size(rackWidth * 2f, rackHeight * 1.6f)
+            )
+        }
+    }
+
+    // --- Rack lateral mic, STANGA-JOS (zona libera, langa dar nu peste acces) ---
+    val sideRackW = w * 0.10f
+    val sideRackH = h * 0.30f
+    solidRect(Offset(w * 0.04f, h * 0.62f), Size(sideRackW, sideRackH), RoomTheme.metalDark)
+    for (i in 1..3) {
+        val ly = h * 0.62f + sideRackH * (i / 4f)
+        drawRect(
+            color = if (i % 2 == 0) cyanGlow.copy(alpha = 0.7f) else cyanGlowDim,
+            topLeft = Offset(w * 0.04f + sideRackW * 0.2f, ly),
+            size = Size(sideRackW * 0.6f, sideRackH * 0.04f)
+        )
+    }
+
+    // --- Rack lateral mic, DREAPTA-JOS (simetric, zona libera) ---
+    solidRect(Offset(w * 0.86f, h * 0.62f), Size(sideRackW, sideRackH), RoomTheme.metalDark)
+    for (i in 1..3) {
+        val ly = h * 0.62f + sideRackH * (i / 4f)
+        drawRect(
+            color = if (i % 2 == 1) cyanGlow.copy(alpha = 0.7f) else cyanGlowDim,
+            topLeft = Offset(w * 0.86f + sideRackW * 0.2f, ly),
+            size = Size(sideRackW * 0.6f, sideRackH * 0.04f)
+        )
+    }
+
+    // --- Cateva cabluri simple pe podea, intre rack-urile de sus si cele laterale ---
+    drawLine(
+        RoomTheme.objectOutline.copy(alpha = 0.5f),
+        Offset(w * 0.09f, rackTop + rackHeight),
+        Offset(w * 0.09f, h * 0.62f),
+        strokeWidth = 2f
+    )
+    drawLine(
+        RoomTheme.objectOutline.copy(alpha = 0.5f),
+        Offset(w * 0.91f, rackTop + rackHeight),
+        Offset(w * 0.91f, h * 0.62f),
+        strokeWidth = 2f
+    )
+
+    drawRoomVignette(w, h)
+}
