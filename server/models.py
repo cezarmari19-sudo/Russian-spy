@@ -119,6 +119,9 @@ class GameRoom:
     bomb_planted: bool = False
     bomb_armed_at_millis: int = 0
     created_at: float = field(default_factory=time.time)
+    # Daca True, camera NU apare in lista publica de lobby-uri (doar cei cu codul
+    # exact pot intra). Implicit False (public), la fel ca in Among Us.
+    is_private: bool = False
     # Cele 4 camere de supraveghere ale RUNDEI curente: fiecare e un dict
     # {"roomId": str, "x": float, "y": float} - generate random la start_game(),
     # aceleasi pentru toti jucatorii din runda respectiva.
