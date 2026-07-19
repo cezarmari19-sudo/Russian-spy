@@ -4,9 +4,12 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,6 +25,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.astran.russianspy.data.BuildingLayout
 import com.astran.russianspy.model.Room
 import com.astran.russianspy.model.RoomFunction
@@ -39,7 +43,8 @@ private const val JOYSTICK_KNOB_RADIUS = 40f
 fun GameCanvasScreen(
     viewModel: GameViewModel,
     onEnterTask: (Room) -> Unit,
-    onOpenSurveillanceMonitors: () -> Unit
+    onOpenSurveillanceMonitors: () -> Unit,
+    onLeaveGame: () -> Unit
 ) {
     // Pozitia jucatorului e tinuta in GameViewModel (nu in "remember" local), ca sa
     // supravietuiasca navigarii catre alte ecrane (ex: camerele de supraveghere) si sa
@@ -62,6 +67,7 @@ fun GameCanvasScreen(
     val wallSegments = remember { buildWallSegmentsFromMergedRooms(BuildingLayout.rooms) }
 
     var currentRoomIdLocal by remember { mutableStateOf("") }
+    var showSettingsMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         var frameCounter = 0
@@ -298,6 +304,31 @@ fun GameCanvasScreen(
                 .padding(16.dp)
         )
 
+        // Buton de setari (rotita), coltul din dreapta-sus - deschide meniul din
+        // care jucatorul poate iesi din meci.
+        IconButton(
+            onClick = { showSettingsMenu = true },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(12.dp)
+                .size(44.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color(0x66000000))
+        ) {
+            Text("⚙", fontSize = 22.sp, color = Color.White)
+        }
+
+        if (showSettingsMenu) {
+            GameSettingsDialog(
+                onDismiss = { showSettingsMenu = false },
+                onLeaveGame = {
+                    showSettingsMenu = false
+                    viewModel.leaveGame()
+                    onLeaveGame()
+                }
+            )
+        }
+
         // Buton "Camere", vizibil DOAR cand jucatorul e langa monitorul fizic din
         // camera de Supraveghere (nu oriunde in camera - altfel e prea usor/OP).
         val distToMonitor = kotlin.math.hypot(
@@ -318,6 +349,52 @@ fun GameCanvasScreen(
             }
         }
     }
+}
+
+/**
+ * Meniul de setari suprapus peste harta jocului, deschis din rotita din
+ * dreapta-sus. Momentan contine doar optiunea de a iesi din meci, dar e
+ * structurat ca AlertDialog, deci e usor de extins ulterior cu alte setari
+ * (volum, sensibilitate joystick, etc) fara sa schimbe restul ecranului.
+ */
+@Composable
+private fun GameSettingsDialog(
+    onDismiss: () -> Unit,
+    onLeaveGame: () -> Unit
+) {
+    var confirmingLeave by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1A1D22),
+        title = { Text("Setari", color = Color.White) },
+        text = {
+            if (confirmingLeave) {
+                Text(
+                    "Sigur vrei sa iesi din meci? Nu te vei mai putea intoarce in aceasta camera.",
+                    color = Color(0xFFCCCCCC)
+                )
+            } else {
+                Text("Meniul de joc.", color = Color(0xFFCCCCCC))
+            }
+        },
+        confirmButton = {
+            if (confirmingLeave) {
+                TextButton(onClick = onLeaveGame) {
+                    Text("IESI", color = Color(0xFFE53935))
+                }
+            } else {
+                TextButton(onClick = { confirmingLeave = true }) {
+                    Text("IESI DIN MECI", color = Color(0xFFE53935))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { if (confirmingLeave) confirmingLeave = false else onDismiss() }) {
+                Text(if (confirmingLeave) "Anuleaza" else "Inchide", color = Color(0xFFAAAAAA))
+            }
+        }
+    )
 }
 
 private fun roomColor(room: Room): Color {
