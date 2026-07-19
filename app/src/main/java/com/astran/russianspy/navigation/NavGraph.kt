@@ -108,6 +108,13 @@ fun RussianSpyNavGraph() {
                 },
                 onOpenSurveillanceMonitors = {
                     navController.navigate(Routes.SURVEILLANCE_MONITORS)
+                },
+                onLeaveGame = {
+                    // Curatam TOT stack-ul de navigare pana la MAIN_MENU (inclusiv
+                    // GAME_MAP), ca sa nu ramana WAITING_ROOM/LOBBY vechi in spate.
+                    navController.navigate(Routes.MAIN_MENU) {
+                        popUpTo(Routes.MAIN_MENU) { inclusive = true }
+                    }
                 }
             )
         }
