@@ -31,6 +31,20 @@ class GameViewModel : ViewModel() {
     private val _gameState = mutableStateOf<GameState?>(null)
     val gameState: State<GameState?> = _gameState
 
+    // Devine true cand camera curenta a fost stearsa (de host, din LOBBY) - ecranele
+    // (WaitingRoomScreen, etc) observa asta si navigheaza inapoi la meniul principal.
+    private val _roomWasDeleted = mutableStateOf(false)
+    val roomWasDeleted: State<Boolean> = _roomWasDeleted
+
+    /** Apelat de ecranul care a navigat inapoi dupa un room_deleted, ca sa reseteze flag-ul. */
+    fun acknowledgeRoomDeleted() {
+        _roomWasDeleted.value = false
+    }
+
+    fun deleteRoom() {
+        networkClient?.sendDeleteRoom()
+    }
+
     private val _localPlayerId = mutableStateOf("")
     val localPlayerId: State<String> = _localPlayerId
 
@@ -198,6 +212,12 @@ class GameViewModel : ViewModel() {
 
     private fun handleServerEvent(event: ServerEvent) {
         when (event) {
+            is ServerEvent.RoomDeleted -> {
+                // Camera a fost stearsa de host - resetam starea locala a jocului,
+                // ca ecranul curent sa poata naviga inapoi la meniul principal.
+                _gameState.value = null
+                _roomWasDeleted.value = true
+            }
             is ServerEvent.LobbyUpdate -> {
                 lobbyPlayers.clear()
                 lobbyPlayers.addAll(event.players)
