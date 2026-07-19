@@ -45,6 +45,32 @@ class GameViewModel : ViewModel() {
         networkClient?.sendDeleteRoom()
     }
 
+    /**
+     * Iesire manuala din meci/camera curenta (apelata din meniul de Setari in joc,
+     * nu din onCleared() - aici jucatorul alege activ sa plece). Deconecteaza
+     * WebSocket-ul si reseteaza starea locala, ca la revenirea in meniul principal
+     * sa nu ramana resturi din partida anterioara (pozitii, nume, rol, camere).
+     */
+    fun leaveGame() {
+        networkClient?.disconnect()
+        networkClient = null
+
+        _gameState.value = null
+        _gameStarted.value = false
+        _myRole.value = null
+        _isHost.value = false
+        _errorMessage.value = null
+        _activeSurveillanceEvent.value = null
+        _currentRoomId.value = "entrance"
+        _localPlayerX.value = BuildingLayout.START_X
+        _localPlayerY.value = BuildingLayout.START_Y
+
+        lobbyPlayers.clear()
+        playerLivePositions.clear()
+        playerNames.clear()
+        surveillanceCameraSpots.clear()
+    }
+
     private val _localPlayerId = mutableStateOf("")
     val localPlayerId: State<String> = _localPlayerId
 
