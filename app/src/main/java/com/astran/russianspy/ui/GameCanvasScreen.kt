@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.astran.russianspy.data.BuildingLayout
@@ -222,6 +223,45 @@ fun GameCanvasScreen(
                 }
             }
 
+            // Ceilalti jucatori vizibili in raza jucatorului local (nu prin pereti),
+            // desenati inainte de cercul propriu, ca sa nu se suprapuna vizual gresit.
+            clipPath(visibilityPathScreen) {
+                viewModel.playerLivePositions.entries.forEach { (otherPlayerId, pos) ->
+                    if (otherPlayerId == viewModel.localPlayerId.value) return@forEach
+                    val isVisible = isPointVisibleFromPoint(
+                        pos.x, pos.y, playerX, playerY, wallSegments, VIEW_RADIUS
+                    )
+                    if (!isVisible) return@forEach
+
+                    val screenPos = worldToScreen(pos.x, pos.y)
+                    val otherColor = colorForOtherPlayer(otherPlayerId)
+
+                    drawCircle(color = otherColor, radius = playerRadius * TILE_SCALE, center = screenPos)
+                    drawCircle(
+                        color = Color(0xFF000000),
+                        radius = playerRadius * TILE_SCALE,
+                        center = screenPos,
+                        style = Stroke(width = 2f)
+                    )
+
+                    // Numele jucatorului deasupra cercului, ca sa se stie cine e.
+                    val name = viewModel.playerNames[otherPlayerId]
+                    if (!name.isNullOrBlank()) {
+                        drawContext.canvas.nativeCanvas.drawText(
+                            name,
+                            screenPos.x,
+                            screenPos.y - playerRadius * TILE_SCALE - 10f,
+                            android.graphics.Paint().apply {
+                                color = android.graphics.Color.WHITE
+                                textSize = 28f
+                                textAlign = android.graphics.Paint.Align.CENTER
+                                isAntiAlias = true
+                            }
+                        )
+                    }
+                }
+            }
+
             drawCircle(
                 color = Color(0xFFFFD700),
                 radius = playerRadius * TILE_SCALE,
@@ -315,6 +355,17 @@ private fun isWalkable(px: Float, py: Float, radius: Float): Boolean {
         }
     }
     return BuildingLayout.rooms.any { it.containsPoint(px, py) }
+}
+
+private fun colorForOtherPlayer(playerId: String): Color {
+    val palette = listOf(
+        Color(0xFFE53935), Color(0xFF1E88E5), Color(0xFF43A047),
+        Color(0xFFFDD835), Color(0xFF8E24AA), Color(0xFFFB8C00),
+        Color(0xFF00ACC1), Color(0xFFD81B60), Color(0xFF6D4C41),
+        Color(0xFFC0CA33)
+    )
+    val idx = (playerId.hashCode().let { if (it < 0) -it else it }) % palette.size
+    return palette[idx]
 }
 
 // Sistemul de vizibilitate (raycasting: WallSegment, buildWallSegmentsFromMergedRooms,
