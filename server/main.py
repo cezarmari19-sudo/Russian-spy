@@ -4,6 +4,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from game_manager import game_manager, MAX_PLAYERS
+from accounts import account_manager
 
 app = FastAPI()
 
@@ -225,3 +226,74 @@ async def set_room_privacy(room_code: str, player_id: str, is_private: bool):
         return {"error": "Doar host-ul poate schimba aceasta setare"}
     room.is_private = is_private
     return {"success": True, "isPrivate": room.is_private}
+
+
+# ===========================================================================
+# CONTURI SI PRIETENI - vezi accounts.py pentru detalii si limitari (in
+# memorie, temporar, pana se adauga autentificarea reala prin email).
+# ===========================================================================
+
+@app.post("/account/register")
+async def account_register(account_id: str, display_name: str):
+    """Apelat la fiecare pornire a aplicatiei cu accountId-ul salvat local pe
+    telefon (generat o singura data). Creeaza contul daca nu exista, sau doar
+    actualizeaza numele daca exista deja."""
+    account = account_manager.get_or_create_account(account_id, display_name)
+    return account.to_public_dict()
+
+
+@app.post("/account/regenerate_code")
+async def account_regenerate_code(account_id: str):
+    new_code, error = account_manager.regenerate_code(account_id)
+    if error:
+        return {"error": error}
+    return {"friendCode": new_code}
+
+
+@app.post("/account/set_code")
+async def account_set_code(account_id: str, desired_code: str):
+    success, error = account_manager.set_custom_code(account_id, desired_code)
+    if not success:
+        return {"error": error}
+    account = account_manager.get_account(account_id)
+    return {"friendCode": account.friend_code if account else desired_code.upper()}
+
+
+@app.post("/account/send_friend_request")
+async def account_send_friend_request(account_id: str, target_code: str):
+    success, error = account_manager.send_friend_request(account_id, target_code)
+    if not success:
+        return {"error": error}
+    return {"success": True}
+
+
+@app.post("/account/respond_to_request")
+async def account_respond_to_request(account_id: str, requester_account_id: str, accept: bool):
+    error = account_manager.respond_to_request(account_id, requester_account_id, accept)
+    if error:
+        return {"error": error}
+    return {"success": True}
+
+
+@app.post("/account/remove_friend")
+async def account_remove_friend(account_id: str, friend_account_id: str):
+    error = account_manager.remove_friend(account_id, friend_account_id)
+    if error:
+        return {"error": error}
+    return {"success": True}
+
+
+@app.get("/account/friends_data")
+async def account_friends_data(account_id: str):
+    """Datele complete pentru ecranul de Prieteni: contul propriu (cu codul),
+    lista de prieteni si lista de cereri primite, intr-un singur apel."""
+    account = account_manager.get_account(account_id)
+    if account is None:
+        return {"error": "Cont inexistent"}
+    friends = account_manager.list_friends(account_id)
+    requests = account_manager.list_incoming_requests(account_id)
+    return {
+        "account": account.to_public_dict(),
+        "friends": [f.to_public_dict() for f in friends],
+        "incomingRequests": [r.to_public_dict() for r in requests],
+    }
