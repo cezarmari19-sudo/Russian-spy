@@ -246,3 +246,34 @@ private fun raySegmentIntersection(
 
     return t1
 }
+
+/**
+ * Verifica daca punctul (px, py) e vizibil din (originX, originY) - adica in raza
+ * de vizibilitate SI fara niciun perete intre ele. Functie PUBLICA, comuna intre
+ * GameCanvasScreen (jucatorul vede alti jucatori pe harta) si
+ * SurveillanceMonitorsScreen (camera de supraveghere vede jucatorii din cadru).
+ */
+fun isPointVisibleFromPoint(
+    px: Float,
+    py: Float,
+    originX: Float,
+    originY: Float,
+    segments: List<WallSegment>,
+    viewRadius: Float
+): Boolean {
+    val dx = px - originX
+    val dy = py - originY
+    val dist = kotlin.math.hypot(dx, dy)
+    if (dist > viewRadius) return false
+    if (dist < 0.001f) return true
+
+    val dirX = dx / dist
+    val dirY = dy / dist
+
+    segments.forEach { seg ->
+        val t = raySegmentIntersection(originX, originY, dirX, dirY, seg)
+        // Daca exista un perete intersectat MAI APROAPE decat punctul tinta, e ascuns.
+        if (t != null && t < dist - 0.5f) return false
+    }
+    return true
+}
