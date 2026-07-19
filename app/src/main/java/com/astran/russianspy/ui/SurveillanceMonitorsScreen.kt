@@ -240,7 +240,7 @@ private fun MonitorPanel(
             // Jucatorii aflati in raza de vizibilitate REALA a camerei (distanta +
             // vizibilitate directa, nu doar "aceeasi camera din harta").
             val visiblePlayers = playerLivePositions.entries.filter { (_, pos) ->
-                isPointVisible(pos.x, pos.y, spot.x, spot.y, wallSegments, VIEW_RADIUS)
+                isPointVisibleFromPoint(pos.x, pos.y, spot.x, spot.y, wallSegments, VIEW_RADIUS)
             }
 
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -294,37 +294,6 @@ private fun MonitorPanel(
             )
         }
     }
-}
-
-/**
- * Verifica daca punctul (px, py) e vizibil din (originX, originY) - adica in raza
- * de vizibilitate SI fara niciun perete intre ele. Foloseste aceeasi logica de
- * intersectie raza-segment ca poligonul de vizibilitate, dar testeaza direct
- * punctul jucatorului (nu doar colturile peretilor).
- */
-private fun isPointVisible(
-    px: Float,
-    py: Float,
-    originX: Float,
-    originY: Float,
-    segments: List<WallSegment>,
-    viewRadius: Float
-): Boolean {
-    val dx = px - originX
-    val dy = py - originY
-    val dist = kotlin.math.hypot(dx, dy)
-    if (dist > viewRadius) return false
-    if (dist < 0.001f) return true
-
-    val dirX = dx / dist
-    val dirY = dy / dist
-
-    segments.forEach { seg ->
-        val t = rayHitDistance(originX, originY, dirX, dirY, seg)
-        // Daca exista un perete intersectat MAI APROAPE decat jucatorul, jucatorul e ascuns.
-        if (t != null && t < dist - 0.5f) return false
-    }
-    return true
 }
 
 /** Deseneaza feed-ul complet al unei camere fixe: podea vizibila (raycasting), jucatori, efecte CRT. */
@@ -511,39 +480,4 @@ private fun DrawScope.drawVignette() {
         topLeft = Offset.Zero,
         size = size
     )
-}
-
-/**
- * Distanta t (>=0) pana la intersectia dintre raza (origin + t*dir) si segmentul dat,
- * sau null daca nu se intersecteaza. Aceeasi logica ca in Visibility.kt, expusa aici
- * ca sa poata fi folosita direct in isPointVisible() de mai sus.
- */
-private fun rayHitDistance(
-    originX: Float,
-    originY: Float,
-    dirX: Float,
-    dirY: Float,
-    seg: WallSegment
-): Float? {
-    val x3 = seg.x1
-    val y3 = seg.y1
-    val x4 = seg.x2
-    val y4 = seg.y2
-
-    val denom = dirX * (y4 - y3) - dirY * (x4 - x3)
-    if (kotlin.math.abs(denom) < 1e-6f) return null
-
-    val t2 = ((x3 - originX) * dirY - (y3 - originY) * dirX) / denom
-    val edgeTolerance = 0.001f
-    if (t2 < -edgeTolerance || t2 > 1f + edgeTolerance) return null
-    val t2Clamped = t2.coerceIn(0f, 1f)
-
-    val t1 = if (kotlin.math.abs(dirX) > kotlin.math.abs(dirY)) {
-        (x3 + t2Clamped * (x4 - x3) - originX) / dirX
-    } else {
-        (y3 + t2Clamped * (y4 - y3) - originY) / dirY
-    }
-    if (t1 < 0f) return null
-
-    return t1
 }
