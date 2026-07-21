@@ -22,6 +22,7 @@ sealed class ServerEvent {
     data class PlayerDisconnected(val playerId: String) : ServerEvent()
     data class LobbyUpdate(val players: List<LobbyPlayerInfo>) : ServerEvent()
     object RoomDeleted : ServerEvent()
+    data class FriendRoomInvite(val fromDisplayName: String, val fromFriendCode: String, val roomCode: String) : ServerEvent()
     data class Error(val message: String) : ServerEvent()
 }
 
@@ -164,8 +165,12 @@ class NetworkClient(
         })
     }
 
-    fun connectWebSocket(roomCode: String, playerId: String) {
-        val url = "${ServerConfig.WS_BASE}/ws/$roomCode/$playerId"
+    fun connectWebSocket(roomCode: String, playerId: String, accountId: String? = null) {
+        val url = if (accountId != null) {
+            "${ServerConfig.WS_BASE}/ws/$roomCode/$playerId?account_id=$accountId"
+        } else {
+            "${ServerConfig.WS_BASE}/ws/$roomCode/$playerId"
+        }
         val request = Request.Builder().url(url).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -245,6 +250,13 @@ class NetworkClient(
             }
             "error" -> onEvent(ServerEvent.Error(json.optString("message", "Eroare necunoscuta")))
             "room_deleted" -> onEvent(ServerEvent.RoomDeleted)
+            "friend_room_invite" -> onEvent(
+                ServerEvent.FriendRoomInvite(
+                    fromDisplayName = json.getString("fromDisplayName"),
+                    fromFriendCode = json.getString("fromFriendCode"),
+                    roomCode = json.getString("roomCode")
+                )
+            )
         }
     }
 
