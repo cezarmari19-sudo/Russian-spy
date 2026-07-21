@@ -5,9 +5,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -73,7 +73,12 @@ fun FriendsScreen(
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0D0F12)) {
-        Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp)
+        ) {
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -184,11 +189,8 @@ fun FriendsScreen(
                     Text("Niciun prieten adaugat inca.", color = Color(0xFF666666), fontSize = 13.sp)
                 }
 
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(data.friends) { friend ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    data.friends.forEach { friend ->
                         FriendRow(
                             friend = friend,
                             onRemove = {
@@ -199,6 +201,8 @@ fun FriendsScreen(
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
