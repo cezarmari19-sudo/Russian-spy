@@ -75,7 +75,8 @@ fun FindLobbyScreen(
             Button(
                 onClick = {
                     val playerName = PlayerPrefs.getPlayerName(context)
-                    viewModel.joinRoom(playerName, roomCode)
+                    val accountId = PlayerPrefs.getAccountId(context)
+                    viewModel.joinRoom(playerName, roomCode, accountId)
                 },
                 enabled = roomCode.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
