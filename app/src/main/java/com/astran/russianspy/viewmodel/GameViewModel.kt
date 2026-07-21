@@ -26,6 +26,9 @@ data class LivePosition(val roomId: String, val x: Float, val y: Float)
 /** Pozitia fixa (camera + punct exact X/Y in interiorul ei) a unei camere de supraveghere, pentru runda curenta. */
 data class SurveillanceCameraSpot(val roomId: String, val x: Float, val y: Float)
 
+/** O invitatie live primita de la un prieten, catre camera lui de joc. */
+data class FriendRoomInviteInfo(val fromDisplayName: String, val fromFriendCode: String, val roomCode: String)
+
 class GameViewModel : ViewModel() {
 
     private val _gameState = mutableStateOf<GameState?>(null)
@@ -39,6 +42,15 @@ class GameViewModel : ViewModel() {
     /** Apelat de ecranul care a navigat inapoi dupa un room_deleted, ca sa reseteze flag-ul. */
     fun acknowledgeRoomDeleted() {
         _roomWasDeleted.value = false
+    }
+
+    // Ultima invitatie primita de la un prieten (cod camera + numele lui) - un ecran
+    // (ex. MainMenuScreen) o poate observa si oferi "Alatura-te" cat timp e activa.
+    private val _incomingFriendInvite = mutableStateOf<FriendRoomInviteInfo?>(null)
+    val incomingFriendInvite: State<FriendRoomInviteInfo?> = _incomingFriendInvite
+
+    fun dismissFriendInvite() {
+        _incomingFriendInvite.value = null
     }
 
     fun deleteRoom() {
@@ -144,7 +156,7 @@ class GameViewModel : ViewModel() {
 
     private var networkClient: NetworkClient? = null
 
-    fun createRoom(playerName: String) {
+    fun createRoom(playerName: String, accountId: String? = null) {
         val playerId = generatePlayerId()
         _localPlayerId.value = playerId
         _localPlayerName.value = playerName
@@ -166,11 +178,11 @@ class GameViewModel : ViewModel() {
             )
             _currentRoomId.value = "entrance"
             playerNames[playerId] = playerName
-            client.connectWebSocket(roomCode, playerId)
+            client.connectWebSocket(roomCode, playerId, accountId)
         }
     }
 
-    fun joinRoom(playerName: String, roomCode: String) {
+    fun joinRoom(playerName: String, roomCode: String, accountId: String? = null) {
         val playerId = generatePlayerId()
         _localPlayerId.value = playerId
         _localPlayerName.value = playerName
@@ -192,7 +204,7 @@ class GameViewModel : ViewModel() {
             )
             _currentRoomId.value = "entrance"
             playerNames[playerId] = playerName
-            client.connectWebSocket(roomCode, playerId)
+            client.connectWebSocket(roomCode, playerId, accountId)
         }
     }
 
@@ -243,6 +255,13 @@ class GameViewModel : ViewModel() {
                 // ca ecranul curent sa poata naviga inapoi la meniul principal.
                 _gameState.value = null
                 _roomWasDeleted.value = true
+            }
+            is ServerEvent.FriendRoomInvite -> {
+                _incomingFriendInvite.value = FriendRoomInviteInfo(
+                    fromDisplayName = event.fromDisplayName,
+                    fromFriendCode = event.fromFriendCode,
+                    roomCode = event.roomCode
+                )
             }
             is ServerEvent.LobbyUpdate -> {
                 lobbyPlayers.clear()
