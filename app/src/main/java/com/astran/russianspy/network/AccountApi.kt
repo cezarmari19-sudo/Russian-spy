@@ -185,4 +185,22 @@ object AccountApi {
             onResult(FriendsData(account, friends, requests), null)
         }
     }
+
+    /** Invita un prieten LIVE intr-o camera - functioneaza doar daca prietenul e conectat acum. */
+    fun inviteToRoom(accountId: String, friendAccountId: String, roomCode: String, onResult: (success: Boolean, error: String?) -> Unit) {
+        postForm(
+            "/account/invite_to_room",
+            mapOf("account_id" to accountId, "friend_account_id" to friendAccountId, "room_code" to roomCode)
+        ) { json, error ->
+            if (json == null) {
+                onResult(false, error)
+                return@postForm
+            }
+            if (json.has("error")) {
+                onResult(false, json.getString("error"))
+            } else {
+                onResult(true, null)
+            }
+        }
+    }
 }
