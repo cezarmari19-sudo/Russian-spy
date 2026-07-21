@@ -17,6 +17,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.astran.russianspy.data.PlayerPrefs
+import com.astran.russianspy.network.AccountApi
 import com.astran.russianspy.viewmodel.GameViewModel
 
 private const val MIN_PLAYERS = 1
@@ -34,6 +36,7 @@ fun WaitingRoomScreen(
     val errorMessage by viewModel.errorMessage
 
     var showSettings by remember { mutableStateOf(false) }
+    var showInviteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(gameStarted) {
         if (gameStarted) {
@@ -86,9 +89,14 @@ fun WaitingRoomScreen(
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold
                 )
-                if (isHost) {
-                    IconButton(onClick = { showSettings = true }) {
-                        Text("⚙")
+                Row {
+                    IconButton(onClick = { showInviteDialog = true }) {
+                        Text("👥")
+                    }
+                    if (isHost) {
+                        IconButton(onClick = { showSettings = true }) {
+                            Text("⚙")
+                        }
                     }
                 }
             }
@@ -201,6 +209,83 @@ fun WaitingRoomScreen(
     if (showSettings) {
         LobbySettingsDialog(onDismiss = { showSettings = false })
     }
+
+    if (showInviteDialog) {
+        InviteFriendDialog(
+            roomCode = roomCode,
+            onDismiss = { showInviteDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun InviteFriendDialog(roomCode: String, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val accountId = remember { PlayerPrefs.getAccountId(context) }
+
+    var friends by remember { mutableStateOf<List<com.astran.russianspy.network.AccountInfo>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        AccountApi.fetchFriendsData(accountId) { data, error ->
+            isLoading = false
+            if (data != null) {
+                friends = data.friends
+            } else {
+                statusMessage = error ?: "Nu am putut incarca lista de prieteni"
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Invita un prieten") },
+        text = {
+            Column {
+                if (isLoading) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else if (friends.isEmpty()) {
+                    Text("Nu ai niciun prieten adaugat inca.", fontSize = 13.sp)
+                } else {
+                    friends.forEach { friend ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(friend.displayName, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            TextButton(onClick = {
+                                AccountApi.inviteToRoom(accountId, friend.accountId, roomCode) { success, error ->
+                                    statusMessage = if (success) {
+                                        "Invitatie trimisa catre ${friend.displayName}."
+                                    } else {
+                                        error ?: "Nu am putut trimite invitatia"
+                                    }
+                                }
+                            }) {
+                                Text("Invita")
+                            }
+                        }
+                    }
+                }
+
+                statusMessage?.let { msg ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(msg, fontSize = 12.sp, color = Color(0xFF4CAF50))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Inchide")
+            }
+        }
+    )
 }
 
 @Composable
