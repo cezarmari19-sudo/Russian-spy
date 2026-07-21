@@ -41,7 +41,8 @@ fun LobbyScreen(
         if (!hasStartedCreating) {
             hasStartedCreating = true
             val playerName = PlayerPrefs.getPlayerName(context)
-            viewModel.createRoom(playerName)
+            val accountId = PlayerPrefs.getAccountId(context)
+            viewModel.createRoom(playerName, accountId)
         }
     }
 
