@@ -1,6 +1,7 @@
 package com.astran.russianspy.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -12,15 +13,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.astran.russianspy.ui.theme.SectionLabel
+import com.astran.russianspy.ui.theme.TacticalBackground
+import com.astran.russianspy.ui.theme.TacticalButton
+import com.astran.russianspy.ui.theme.TacticalColors
 
 /**
  * Ecranul principal, primul care apare la pornirea aplicatiei (stil Among Us):
- * o bara subtire pe partea STANGA (nu un sfert din latime cum ar suna literal -
- * un sfert ar fi prea lat si ar concura vizual cu butoanele mari; aici e o bara
- * ingusta, fixa, cu iconite/text vertical) continand butoanele de SETARI,
- * PRIETENI si LOBBY-URI, iar restul ecranului (dreapta) contine titlul jocului
- * si cele 2 actiuni principale: START (-> gaseste lobby, introduci un cod) si
- * CREEAZA LOBBY (-> creezi o camera noua, primesti un cod).
+ * o bara subtire pe partea STANGA cu iconite pentru SETARI, PRIETENI si
+ * LOBBY-URI, iar restul ecranului (dreapta) contine titlul jocului si cele 2
+ * actiuni principale: START (-> gaseste lobby, introduci un cod) si CREEAZA
+ * LOBBY (-> creezi o camera noua, primesti un cod).
  */
 @Composable
 fun MainMenuScreen(
@@ -30,41 +33,29 @@ fun MainMenuScreen(
     onFriendsClick: () -> Unit,
     onLobbiesClick: () -> Unit
 ) {
-    Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0D0F12)) {
+    TacticalBackground {
         Row(modifier = Modifier.fillMaxSize()) {
 
             // --- Bara subtire din stanga: Setari + Prieteni + Lobby-uri ---
             Column(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(72.dp)
-                    .background(Color(0xFF15181C)),
+                    .width(76.dp)
+                    .background(TacticalColors.BackgroundLight)
+                    .border(
+                        width = 1.dp,
+                        color = TacticalColors.Border
+                    ),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Top
             ) {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(28.dp))
 
-                SidebarIconButton(
-                    label = "Setari",
-                    icon = "⚙",
-                    onClick = onSettingsClick
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                SidebarIconButton(
-                    label = "Prieteni",
-                    icon = "👥",
-                    onClick = onFriendsClick
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                SidebarIconButton(
-                    label = "Lobby-uri",
-                    icon = "📋",
-                    onClick = onLobbiesClick
-                )
+                SidebarIconButton(label = "Setari", icon = "⚙", onClick = onSettingsClick)
+                Spacer(modifier = Modifier.height(14.dp))
+                SidebarIconButton(label = "Prieteni", icon = "👥", onClick = onFriendsClick)
+                Spacer(modifier = Modifier.height(14.dp))
+                SidebarIconButton(label = "Lobby-uri", icon = "📋", onClick = onLobbiesClick)
             }
 
             // --- Zona principala: titlu + actiuni ---
@@ -75,36 +66,45 @@ fun MainMenuScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
+                SectionLabel(text = "Operatiune activa")
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 Text(
                     text = "RUSSIAN SPY",
-                    color = Color.White,
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Bold
+                    color = TacticalColors.TextPrimary,
+                    fontSize = 38.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp
                 )
 
-                Spacer(modifier = Modifier.height(64.dp))
+                // Linie subtire de accent sub titlu - un singur detaliu de culoare,
+                // nu un fundal colorat sau un gradient pe tot titlul.
+                Box(
+                    modifier = Modifier
+                        .padding(top = 10.dp)
+                        .width(64.dp)
+                        .height(3.dp)
+                        .background(TacticalColors.Accent)
+                )
 
-                Button(
+                Spacer(modifier = Modifier.height(56.dp))
+
+                TacticalButton(
+                    text = "START",
                     onClick = onStartClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
-                    modifier = Modifier
-                        .fillMaxWidth(0.7f)
-                        .height(56.dp)
-                ) {
-                    Text("START", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                }
+                    isPrimary = true,
+                    modifier = Modifier.fillMaxWidth(0.72f)
+                )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
-                Button(
+                TacticalButton(
+                    text = "CREEAZA LOBBY",
                     onClick = onCreateLobbyClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2E36)),
-                    modifier = Modifier
-                        .fillMaxWidth(0.7f)
-                        .height(56.dp)
-                ) {
-                    Text("CREEAZA LOBBY", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
+                    isPrimary = false,
+                    modifier = Modifier.fillMaxWidth(0.72f)
+                )
             }
         }
     }
@@ -114,9 +114,10 @@ fun MainMenuScreen(
 private fun SidebarIconButton(label: String, icon: String, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .width(60.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF1F232A))
+            .width(62.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(TacticalColors.Surface)
+            .border(width = 1.dp, color = TacticalColors.Border, shape = RoundedCornerShape(8.dp))
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -124,7 +125,7 @@ private fun SidebarIconButton(label: String, icon: String, onClick: () -> Unit) 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(text = icon, fontSize = 20.sp)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(text = label, fontSize = 9.sp, color = Color(0xFFAAAAAA))
+                Text(text = label, fontSize = 9.sp, color = TacticalColors.TextSecondary)
             }
         }
     }
