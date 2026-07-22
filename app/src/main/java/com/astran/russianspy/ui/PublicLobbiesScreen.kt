@@ -1,16 +1,13 @@
 package com.astran.russianspy.ui
 
 import android.content.Context
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -19,7 +16,11 @@ import androidx.compose.ui.unit.sp
 import com.astran.russianspy.data.PlayerPrefs
 import com.astran.russianspy.network.NetworkClient
 import com.astran.russianspy.network.PublicRoomInfo
-import com.astran.russianspy.network.ServerEvent
+import com.astran.russianspy.ui.theme.SectionLabel
+import com.astran.russianspy.ui.theme.TacticalBackground
+import com.astran.russianspy.ui.theme.TacticalButton
+import com.astran.russianspy.ui.theme.TacticalCard
+import com.astran.russianspy.ui.theme.TacticalColors
 import com.astran.russianspy.viewmodel.GameViewModel
 
 /**
@@ -76,7 +77,7 @@ fun PublicLobbiesScreen(
         }
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0D0F12)) {
+    TacticalBackground {
         Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
 
             Row(
@@ -84,36 +85,36 @@ fun PublicLobbiesScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "LOBBY-URI PUBLICE",
-                    color = Color.White,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Column {
+                    SectionLabel(text = "Camere active")
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "LOBBY-URI PUBLICE",
+                        color = TacticalColors.TextPrimary,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 TextButton(onClick = onBack) {
-                    Text("Inapoi", color = Color(0xFFAAAAAA))
+                    Text("Inapoi", color = TacticalColors.TextSecondary)
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            Button(
+            TacticalButton(
+                text = if (isLoading) "SE ACTUALIZEAZA..." else "REFRESH",
                 onClick = { refresh() },
                 enabled = !isLoading,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2E36)),
+                isPrimary = false,
+                height = 48.dp,
                 modifier = Modifier.fillMaxWidth()
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                } else {
-                    Text("🔄 REFRESH")
-                }
-            }
+            )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             errorMessage?.let { msg ->
-                Text(text = msg, color = MaterialTheme.colorScheme.error)
+                Text(text = msg, color = TacticalColors.Danger)
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
@@ -121,7 +122,7 @@ fun PublicLobbiesScreen(
                 Box(modifier = Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
                     Text(
                         text = "Niciun lobby disponibil acum.\nApasa REFRESH sau creeaza unul nou.",
-                        color = Color(0xFF888888),
+                        color = TacticalColors.TextMuted,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
@@ -153,39 +154,36 @@ private fun LobbyRow(
     isJoining: Boolean,
     onJoin: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF1A1D22))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column {
-            Text(
-                text = "Camera ${room.roomCode}",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "${room.playerCount}/${room.maxPlayers} jucatori",
-                color = Color(0xFF9AA0A6),
-                fontSize = 13.sp
-            )
-        }
-
-        Button(
-            onClick = onJoin,
-            enabled = !isJoining,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+    TacticalCard(modifier = Modifier.fillMaxWidth(), accentLeft = true) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isJoining) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
-            } else {
-                Text("Intra")
+            Column {
+                Text(
+                    text = "CAMERA ${room.roomCode}",
+                    color = TacticalColors.TextPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "${room.playerCount}/${room.maxPlayers} jucatori",
+                    color = TacticalColors.TextSecondary,
+                    fontSize = 13.sp
+                )
             }
+
+            TacticalButton(
+                text = if (isJoining) "..." else "INTRA",
+                onClick = onJoin,
+                enabled = !isJoining,
+                isPrimary = true,
+                height = 40.dp,
+                modifier = Modifier.width(96.dp)
+            )
         }
     }
 }
