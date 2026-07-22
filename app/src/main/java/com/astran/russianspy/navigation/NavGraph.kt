@@ -5,12 +5,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.astran.russianspy.data.PlayerPrefs
 import com.astran.russianspy.model.RoomFunction
 import com.astran.russianspy.ui.FindLobbyScreen
 import com.astran.russianspy.ui.FriendsScreen
@@ -28,6 +31,15 @@ import com.astran.russianspy.viewmodel.GameViewModel
 fun RussianSpyNavGraph() {
     val navController = rememberNavController()
     val gameViewModel: GameViewModel = viewModel()
+    val context = LocalContext.current
+
+    // Pornim conexiunea GLOBALA de prezenta (pentru invitatii de prieteni) o
+    // singura data, la lansarea aplicatiei - ramane activa in tot navigatia,
+    // indiferent de ecran (meniu, prieteni, lobby, meci).
+    LaunchedEffect(Unit) {
+        val accountId = PlayerPrefs.getAccountId(context)
+        gameViewModel.startAccountPresence(accountId)
+    }
 
     NavHost(navController = navController, startDestination = Routes.MAIN_MENU) {
 
@@ -91,6 +103,14 @@ fun RussianSpyNavGraph() {
                 onGameStarted = {
                     navController.navigate(Routes.GAME_MAP) {
                         popUpTo(Routes.MAIN_MENU) { inclusive = false }
+                    }
+                },
+                onLeaveLobby = {
+                    // La fel ca la iesirea din meci: curatam stack-ul pana la
+                    // MAIN_MENU (inclusiv WAITING_ROOM/LOBBY/FIND_LOBBY), ca
+                    // sa nu ramana ecrane vechi de lobby in spate.
+                    navController.navigate(Routes.MAIN_MENU) {
+                        popUpTo(Routes.MAIN_MENU) { inclusive = true }
                     }
                 }
             )
