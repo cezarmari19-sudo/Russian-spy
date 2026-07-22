@@ -295,6 +295,12 @@ class GameViewModel : ViewModel() {
                 _gameState.value = null
                 _roomWasDeleted.value = true
             }
+            is ServerEvent.FriendRoomInvite -> {
+                // Nu mai poate ajunge pe acest canal (serverul trimite invitatii doar
+                // pe conexiunea globala /ws/account/{account_id}, gestionata de
+                // AccountSocketManager) - ramas doar ca ramura goala, ca "when" sa
+                // fie exhaustiv fata de sealed class-ul ServerEvent.
+            }
             is ServerEvent.LobbyUpdate -> {
                 lobbyPlayers.clear()
                 lobbyPlayers.addAll(event.players)
