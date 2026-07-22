@@ -13,6 +13,7 @@ import com.astran.russianspy.model.Player
 import com.astran.russianspy.model.Role
 import com.astran.russianspy.model.SurveillanceEvent
 import com.astran.russianspy.model.SurveillanceEventType
+import com.astran.russianspy.network.AccountSocketManager
 import com.astran.russianspy.network.LobbyPlayerInfo
 import com.astran.russianspy.network.NetworkClient
 import com.astran.russianspy.network.PlayerPositionInfo
@@ -53,8 +54,46 @@ class GameViewModel : ViewModel() {
         _incomingFriendInvite.value = null
     }
 
+    /**
+     * Porneste conexiunea GLOBALA de prezenta pentru invitatii de prieteni
+     * (AccountSocketManager) - trebuie apelata o singura data, la pornirea
+     * aplicatiei (din MainActivity), cat timp exista un accountId salvat.
+     * Independenta total de conexiunea de joc: ramane activa in meniuri,
+     * ecranul de prieteni, lobby si in meci, ca invitatiile sa poata fi
+     * primite oriunde, nu doar cand esti deja intr-o camera.
+     */
+    fun startAccountPresence(accountId: String) {
+        AccountSocketManager.start(accountId) { fromDisplayName, fromFriendCode, roomCode ->
+            _incomingFriendInvite.value = FriendRoomInviteInfo(
+                fromDisplayName = fromDisplayName,
+                fromFriendCode = fromFriendCode,
+                roomCode = roomCode
+            )
+        }
+    }
+
     fun deleteRoom() {
         networkClient?.sendDeleteRoom()
+    }
+
+    /**
+     * Iesire manuala din LOBBY (camera de asteptare, inainte sa inceapa jocul) -
+     * apelata din butonul de iesire din WaitingRoomScreen. Anunta serverul ca a
+     * plecat (deconectand WebSocket-ul, la fel ca la o inchidere normala a
+     * conexiunii) si reseteaza starea locala, ca revenirea in meniul principal
+     * sa nu ramana cu resturi din lobby-ul anterior (jucatori, cod camera etc.).
+     */
+    fun leaveLobby() {
+        networkClient?.disconnect()
+        networkClient = null
+
+        _gameState.value = null
+        _isHost.value = false
+        _errorMessage.value = null
+        _currentRoomId.value = "entrance"
+
+        lobbyPlayers.clear()
+        playerNames.clear()
     }
 
     /**
@@ -156,7 +195,7 @@ class GameViewModel : ViewModel() {
 
     private var networkClient: NetworkClient? = null
 
-    fun createRoom(playerName: String, accountId: String? = null) {
+    fun createRoom(playerName: String) {
         val playerId = generatePlayerId()
         _localPlayerId.value = playerId
         _localPlayerName.value = playerName
@@ -178,11 +217,11 @@ class GameViewModel : ViewModel() {
             )
             _currentRoomId.value = "entrance"
             playerNames[playerId] = playerName
-            client.connectWebSocket(roomCode, playerId, accountId)
+            client.connectWebSocket(roomCode, playerId)
         }
     }
 
-    fun joinRoom(playerName: String, roomCode: String, accountId: String? = null) {
+    fun joinRoom(playerName: String, roomCode: String) {
         val playerId = generatePlayerId()
         _localPlayerId.value = playerId
         _localPlayerName.value = playerName
@@ -204,7 +243,7 @@ class GameViewModel : ViewModel() {
             )
             _currentRoomId.value = "entrance"
             playerNames[playerId] = playerName
-            client.connectWebSocket(roomCode, playerId, accountId)
+            client.connectWebSocket(roomCode, playerId)
         }
     }
 
@@ -255,13 +294,6 @@ class GameViewModel : ViewModel() {
                 // ca ecranul curent sa poata naviga inapoi la meniul principal.
                 _gameState.value = null
                 _roomWasDeleted.value = true
-            }
-            is ServerEvent.FriendRoomInvite -> {
-                _incomingFriendInvite.value = FriendRoomInviteInfo(
-                    fromDisplayName = event.fromDisplayName,
-                    fromFriendCode = event.fromFriendCode,
-                    roomCode = event.roomCode
-                )
             }
             is ServerEvent.LobbyUpdate -> {
                 lobbyPlayers.clear()
