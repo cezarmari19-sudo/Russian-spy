@@ -27,7 +27,8 @@ private const val MAX_PLAYERS = 15
 @Composable
 fun WaitingRoomScreen(
     viewModel: GameViewModel,
-    onGameStarted: () -> Unit
+    onGameStarted: () -> Unit,
+    onLeaveLobby: () -> Unit
 ) {
     val gameState by viewModel.gameState
     val isHost by viewModel.isHost
@@ -53,27 +54,39 @@ fun WaitingRoomScreen(
                 .fillMaxSize()
                 .padding(24.dp)
         ) {
-            // Header cu codul camerei
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Cod camera",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = roomCode,
-                    fontSize = 40.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 6.sp
-                )
-                Text(
-                    text = "Spune-le celorlalti acest cod ca sa se alature",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            // Header cu buton de iesire + codul camerei
+            Box(modifier = Modifier.fillMaxWidth()) {
+                IconButton(
+                    onClick = {
+                        viewModel.leaveLobby()
+                        onLeaveLobby()
+                    },
+                    modifier = Modifier.align(Alignment.CenterStart)
+                ) {
+                    Text("⬅", fontSize = 20.sp)
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Cod camera",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = roomCode,
+                        fontSize = 40.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 6.sp
+                    )
+                    Text(
+                        text = "Spune-le celorlalti acest cod ca sa se alature",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
