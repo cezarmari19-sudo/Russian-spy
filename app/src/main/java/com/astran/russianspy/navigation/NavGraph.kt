@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +40,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.astran.russianspy.data.PlayerPrefs
 import com.astran.russianspy.model.RoomFunction
+import com.astran.russianspy.ui.theme.TacticalColors
 import com.astran.russianspy.ui.FindLobbyScreen
 import com.astran.russianspy.ui.FriendsScreen
 import com.astran.russianspy.ui.GameCanvasScreen
@@ -56,6 +59,9 @@ fun RussianSpyNavGraph() {
     val gameViewModel: GameViewModel = viewModel()
     val context = LocalContext.current
 
+    // Pornim conexiunea GLOBALA de prezenta (pentru invitatii de prieteni) o
+    // singura data, la lansarea aplicatiei - ramane activa in tot navigatia,
+    // indiferent de ecran (meniu, prieteni, lobby, meci).
     LaunchedEffect(Unit) {
         val accountId = PlayerPrefs.getAccountId(context)
         gameViewModel.startAccountPresence(accountId)
@@ -77,24 +83,32 @@ fun RussianSpyNavGraph() {
             composable(Routes.PUBLIC_LOBBIES) {
                 PublicLobbiesScreen(
                     viewModel = gameViewModel,
-                    onRoomReady = { navController.navigate(Routes.WAITING_ROOM) },
+                    onRoomReady = {
+                        navController.navigate(Routes.WAITING_ROOM)
+                    },
                     onBack = { navController.popBackStack() },
                     onNeedsName = { navController.navigate(Routes.SETTINGS) }
                 )
             }
 
             composable(Routes.SETTINGS) {
-                SettingsScreen(onDone = { navController.popBackStack() })
+                SettingsScreen(
+                    onDone = { navController.popBackStack() }
+                )
             }
 
             composable(Routes.FRIENDS) {
-                FriendsScreen(onBack = { navController.popBackStack() })
+                FriendsScreen(
+                    onBack = { navController.popBackStack() }
+                )
             }
 
             composable(Routes.FIND_LOBBY) {
                 FindLobbyScreen(
                     viewModel = gameViewModel,
-                    onRoomReady = { navController.navigate(Routes.WAITING_ROOM) },
+                    onRoomReady = {
+                        navController.navigate(Routes.WAITING_ROOM)
+                    },
                     onBack = { navController.popBackStack() },
                     onNeedsName = { navController.navigate(Routes.SETTINGS) }
                 )
@@ -103,7 +117,9 @@ fun RussianSpyNavGraph() {
             composable(Routes.LOBBY) {
                 LobbyScreen(
                     viewModel = gameViewModel,
-                    onRoomReady = { navController.navigate(Routes.WAITING_ROOM) },
+                    onRoomReady = {
+                        navController.navigate(Routes.WAITING_ROOM)
+                    },
                     onNeedsName = { navController.navigate(Routes.SETTINGS) }
                 )
             }
@@ -117,6 +133,9 @@ fun RussianSpyNavGraph() {
                         }
                     },
                     onLeaveLobby = {
+                        // La fel ca la iesirea din meci: curatam stack-ul pana la
+                        // MAIN_MENU (inclusiv WAITING_ROOM/LOBBY/FIND_LOBBY), ca
+                        // sa nu ramana ecrane vechi de lobby in spate.
                         navController.navigate(Routes.MAIN_MENU) {
                             popUpTo(Routes.MAIN_MENU) { inclusive = true }
                         }
@@ -134,8 +153,12 @@ fun RussianSpyNavGraph() {
                             else -> { /* camera fara task momentan */ }
                         }
                     },
-                    onOpenSurveillanceMonitors = { navController.navigate(Routes.SURVEILLANCE_MONITORS) },
+                    onOpenSurveillanceMonitors = {
+                        navController.navigate(Routes.SURVEILLANCE_MONITORS)
+                    },
                     onLeaveGame = {
+                        // Curatam TOT stack-ul de navigare pana la MAIN_MENU (inclusiv
+                        // GAME_MAP), ca sa nu ramana WAITING_ROOM/LOBBY vechi in spate.
                         navController.navigate(Routes.MAIN_MENU) {
                             popUpTo(Routes.MAIN_MENU) { inclusive = true }
                         }
@@ -182,6 +205,12 @@ fun RussianSpyNavGraph() {
             }
         }
 
+        // Banner GLOBAL de invitatie de prieten, stil "Among Us" - un card ingust
+        // care aluneca din varful ecranului, FARA sa blocheze restul ecranului
+        // (spre deosebire de un AlertDialog modal). Apare deasupra a orice ecran
+        // curent, indiferent unde e jucatorul in aplicatie. Sursa e
+        // gameViewModel.incomingFriendInvite, populata de AccountSocketManager
+        // prin canalul global de prezenta.
         val incomingInvite = gameViewModel.incomingFriendInvite.value
         AnimatedVisibility(
             visible = incomingInvite != null,
@@ -194,25 +223,34 @@ fun RussianSpyNavGraph() {
         ) {
             if (incomingInvite != null) {
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFF1A1D22),
-                    shadowElevation = 8.dp,
+                    shape = com.astran.russianspy.ui.theme.tacticalCardShapePublic(14.dp),
+                    color = TacticalColors.Surface,
+                    shadowElevation = 10.dp,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, TacticalColors.Border),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier
+                            .padding(14.dp)
+                            .drawBehind {
+                                drawRect(
+                                    color = TacticalColors.Accent,
+                                    size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)
+                                )
+                            },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "${incomingInvite.fromDisplayName} te invita",
-                                color = Color.White,
+                                color = TacticalColors.TextPrimary,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = "Camera ${incomingInvite.roomCode}",
-                                color = Color(0xFF9AA0A6),
+                                color = TacticalColors.TextSecondary,
                                 fontSize = 13.sp
                             )
                         }
@@ -220,13 +258,15 @@ fun RussianSpyNavGraph() {
                         Spacer(modifier = Modifier.width(8.dp))
 
                         TextButton(onClick = { gameViewModel.dismissFriendInvite() }) {
-                            Text("Ignora", color = Color(0xFF9AA0A6), fontSize = 13.sp)
+                            Text("Ignora", color = TacticalColors.TextSecondary, fontSize = 13.sp)
                         }
 
                         Button(
                             onClick = {
                                 val roomCodeToJoin = incomingInvite.roomCode
                                 gameViewModel.dismissFriendInvite()
+                                // Iesim intai din orice lobby/meci curent (daca exista), ca
+                                // sa nu ramanem cu doua conexiuni WS de joc deschise odata.
                                 gameViewModel.leaveLobby()
                                 val playerName = PlayerPrefs.getPlayerName(context)
                                 gameViewModel.joinRoom(playerName, roomCodeToJoin)
@@ -234,7 +274,7 @@ fun RussianSpyNavGraph() {
                                     popUpTo(Routes.MAIN_MENU) { inclusive = false }
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                            colors = ButtonDefaults.buttonColors(containerColor = TacticalColors.Accent),
                             modifier = Modifier.height(36.dp)
                         ) {
                             Text("Alatura-te", fontSize = 13.sp)
