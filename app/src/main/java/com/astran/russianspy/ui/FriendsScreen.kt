@@ -3,7 +3,6 @@ package com.astran.russianspy.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,8 +11,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -22,6 +19,11 @@ import com.astran.russianspy.data.PlayerPrefs
 import com.astran.russianspy.network.AccountApi
 import com.astran.russianspy.network.AccountInfo
 import com.astran.russianspy.network.FriendsData
+import com.astran.russianspy.ui.theme.SectionLabel
+import com.astran.russianspy.ui.theme.TacticalBackground
+import com.astran.russianspy.ui.theme.TacticalButton
+import com.astran.russianspy.ui.theme.TacticalCard
+import com.astran.russianspy.ui.theme.TacticalColors
 
 /**
  * Ecran Prieteni: codul propriu de 7 caractere (copiabil, regenerabil, sau
@@ -72,7 +74,7 @@ fun FriendsScreen(
         }
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0D0F12)) {
+    TacticalBackground {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -85,9 +87,13 @@ fun FriendsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("PRIETENI", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Column {
+                    SectionLabel(text = "Contacte")
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("PRIETENI", color = TacticalColors.TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
                 TextButton(onClick = onBack) {
-                    Text("Inapoi", color = Color(0xFFAAAAAA))
+                    Text("Inapoi", color = TacticalColors.TextSecondary)
                 }
             }
 
@@ -95,17 +101,17 @@ fun FriendsScreen(
 
             if (isLoading && friendsData == null) {
                 Box(modifier = Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = TacticalColors.Accent)
                 }
             }
 
             errorMessage?.let { msg ->
-                Text(text = msg, color = MaterialTheme.colorScheme.error)
+                Text(text = msg, color = TacticalColors.Danger)
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
             actionMessage?.let { msg ->
-                Text(text = msg, color = Color(0xFF3DDC5A), fontSize = 13.sp)
+                Text(text = msg, color = TacticalColors.Success, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
@@ -131,7 +137,10 @@ fun FriendsScreen(
                     onEdit = { showEditCodeDialog = true }
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(18.dp))
+
+                SectionLabel(text = "Adauga prieten")
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -139,10 +148,19 @@ fun FriendsScreen(
                         onValueChange = { addFriendCode = it.uppercase() },
                         label = { Text("Cod prieten") },
                         singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = TacticalColors.Accent,
+                            unfocusedBorderColor = TacticalColors.Border,
+                            focusedTextColor = TacticalColors.TextPrimary,
+                            unfocusedTextColor = TacticalColors.TextPrimary,
+                            cursorColor = TacticalColors.Accent
+                        ),
                         modifier = Modifier.weight(1f)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
+                    Spacer(modifier = Modifier.width(10.dp))
+                    TacticalButton(
+                        text = "Trimite",
                         onClick = {
                             AccountApi.sendFriendRequest(accountId, addFriendCode) { success, error ->
                                 if (success) {
@@ -153,40 +171,42 @@ fun FriendsScreen(
                                 }
                             }
                         },
-                        enabled = addFriendCode.length == 7
-                    ) {
-                        Text("Trimite")
-                    }
+                        enabled = addFriendCode.length == 7,
+                        isPrimary = true,
+                        height = 48.dp,
+                        modifier = Modifier.width(110.dp)
+                    )
                 }
 
                 if (data.incomingRequests.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Text("CERERI PRIMITE", color = Color(0xFF9AA0A6), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(22.dp))
+                    SectionLabel(text = "Cereri primite")
                     Spacer(modifier = Modifier.height(8.dp))
-                    data.incomingRequests.forEach { requester ->
-                        RequestRow(
-                            requester = requester,
-                            onAccept = {
-                                AccountApi.respondToRequest(accountId, requester.accountId, true) { success, error ->
-                                    if (success) refresh() else errorMessage = error
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        data.incomingRequests.forEach { requester ->
+                            RequestRow(
+                                requester = requester,
+                                onAccept = {
+                                    AccountApi.respondToRequest(accountId, requester.accountId, true) { success, error ->
+                                        if (success) refresh() else errorMessage = error
+                                    }
+                                },
+                                onReject = {
+                                    AccountApi.respondToRequest(accountId, requester.accountId, false) { success, error ->
+                                        if (success) refresh() else errorMessage = error
+                                    }
                                 }
-                            },
-                            onReject = {
-                                AccountApi.respondToRequest(accountId, requester.accountId, false) { success, error ->
-                                    if (success) refresh() else errorMessage = error
-                                }
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
-                Text("PRIETENII MEI (${data.friends.size})", color = Color(0xFF9AA0A6), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(22.dp))
+                SectionLabel(text = "Prietenii mei (${data.friends.size})")
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (data.friends.isEmpty()) {
-                    Text("Niciun prieten adaugat inca.", color = Color(0xFF666666), fontSize = 13.sp)
+                    Text("Niciun prieten adaugat inca.", color = TacticalColors.TextMuted, fontSize = 13.sp)
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -232,63 +252,59 @@ private fun MyCodeCard(
     onRegenerate: () -> Unit,
     onEdit: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF1A1D22))
-            .padding(16.dp)
-    ) {
-        Text("CODUL TAU", color = Color(0xFF9AA0A6), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(friendCode, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(10.dp))
-        Row {
-            TextButton(onClick = onCopy) { Text("Copiaza") }
-            TextButton(onClick = onRegenerate) { Text("Genereaza nou") }
-            TextButton(onClick = onEdit) { Text("Editeaza") }
+    TacticalCard(modifier = Modifier.fillMaxWidth(), accentLeft = true) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            SectionLabel(text = "Codul tau")
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(friendCode, color = TacticalColors.TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+            Spacer(modifier = Modifier.height(10.dp))
+            Row {
+                TextButton(onClick = onCopy) { Text("Copiaza", color = TacticalColors.Accent) }
+                TextButton(onClick = onRegenerate) { Text("Genereaza nou", color = TacticalColors.TextSecondary) }
+                TextButton(onClick = onEdit) { Text("Editeaza", color = TacticalColors.TextSecondary) }
+            }
         }
     }
 }
 
 @Composable
 private fun RequestRow(requester: AccountInfo, onAccept: () -> Unit, onReject: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF1A1D22))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column {
-            Text(requester.displayName, color = Color.White, fontWeight = FontWeight.Bold)
-            Text(requester.friendCode, color = Color(0xFF9AA0A6), fontSize = 12.sp)
-        }
-        Row {
-            TextButton(onClick = onAccept) { Text("Accepta", color = Color(0xFF4CAF50)) }
-            TextButton(onClick = onReject) { Text("Refuza", color = Color(0xFFE53935)) }
+    TacticalCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(requester.displayName, color = TacticalColors.TextPrimary, fontWeight = FontWeight.Bold)
+                Text(requester.friendCode, color = TacticalColors.TextSecondary, fontSize = 12.sp)
+            }
+            Row {
+                TextButton(onClick = onAccept) { Text("Accepta", color = TacticalColors.Success) }
+                TextButton(onClick = onReject) { Text("Refuza", color = TacticalColors.Danger) }
+            }
         }
     }
 }
 
 @Composable
 private fun FriendRow(friend: AccountInfo, onRemove: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Color(0xFF1A1D22))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column {
-            Text(friend.displayName, color = Color.White, fontWeight = FontWeight.Bold)
-            Text(friend.friendCode, color = Color(0xFF9AA0A6), fontSize = 12.sp)
+    TacticalCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(friend.displayName, color = TacticalColors.TextPrimary, fontWeight = FontWeight.Bold)
+                Text(friend.friendCode, color = TacticalColors.TextSecondary, fontSize = 12.sp)
+            }
+            TextButton(onClick = onRemove) { Text("Sterge", color = TacticalColors.Danger) }
         }
-        TextButton(onClick = onRemove) { Text("Sterge", color = Color(0xFFE53935)) }
     }
 }
 
@@ -298,27 +314,34 @@ private fun EditCodeDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1A1D22),
-        title = { Text("Editeaza codul", color = Color.White) },
+        containerColor = TacticalColors.Surface,
+        title = { Text("Editeaza codul", color = TacticalColors.TextPrimary) },
         text = {
             Column {
-                Text("Exact 7 caractere, litere si cifre.", color = Color(0xFFCCCCCC), fontSize = 13.sp)
+                Text("Exact 7 caractere, litere si cifre.", color = TacticalColors.TextSecondary, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = text,
                     onValueChange = { if (it.length <= 7) text = it.uppercase() },
                     singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = TacticalColors.Accent,
+                        unfocusedBorderColor = TacticalColors.Border,
+                        focusedTextColor = TacticalColors.TextPrimary,
+                        unfocusedTextColor = TacticalColors.TextPrimary,
+                        cursorColor = TacticalColors.Accent
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(text) }, enabled = text.length == 7) {
-                Text("Salveaza")
+                Text("Salveaza", color = TacticalColors.Accent)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Anuleaza", color = Color(0xFFAAAAAA)) }
+            TextButton(onClick = onDismiss) { Text("Anuleaza", color = TacticalColors.TextSecondary) }
         }
     )
 }
