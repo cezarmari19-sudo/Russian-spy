@@ -13,6 +13,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.astran.russianspy.data.PlayerPrefs
+import com.astran.russianspy.ui.theme.SectionLabel
+import com.astran.russianspy.ui.theme.TacticalBackground
+import com.astran.russianspy.ui.theme.TacticalColors
 import com.astran.russianspy.viewmodel.GameViewModel
 
 /**
@@ -51,7 +54,7 @@ fun LobbyScreen(
         }
     }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    TacticalBackground {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -60,19 +63,24 @@ fun LobbyScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            SectionLabel(text = "Se stabileste conexiunea")
+
+            Spacer(modifier = Modifier.height(10.dp))
+
             Text(
                 text = "SE CREEAZA CAMERA...",
+                color = TacticalColors.TextPrimary,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
-            CircularProgressIndicator()
+            CircularProgressIndicator(color = TacticalColors.Accent)
 
             errorMessage?.let { msg ->
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(text = msg, color = MaterialTheme.colorScheme.error)
+                Text(text = msg, color = TacticalColors.Danger)
             }
         }
     }
