@@ -2,8 +2,10 @@ package com.astran.russianspy.navigation
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
@@ -176,6 +178,40 @@ fun RussianSpyNavGraph() {
         composable(Routes.GAME_OVER) {
             PlaceholderScreen(name = "Sfarsit joc")
         }
+    }
+
+    // Popup GLOBAL de invitatie de prieten - deasupra a orice ecran curent, ca
+    // sa apara indiferent unde e jucatorul in aplicatie (meniu, prieteni,
+    // lobby propriu, meci etc). Sursa e gameViewModel.incomingFriendInvite,
+    // populata de AccountSocketManager prin canalul global de prezenta.
+    val incomingInvite = gameViewModel.incomingFriendInvite.value
+    if (incomingInvite != null) {
+        AlertDialog(
+            onDismissRequest = { gameViewModel.dismissFriendInvite() },
+            title = { Text("Invitatie de la ${incomingInvite.fromDisplayName}") },
+            text = { Text("${incomingInvite.fromDisplayName} (${incomingInvite.fromFriendCode}) te invita in camera ${incomingInvite.roomCode}.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val roomCodeToJoin = incomingInvite.roomCode
+                    gameViewModel.dismissFriendInvite()
+                    // Iesim intai din orice lobby/meci curent (daca exista), ca sa nu
+                    // ramanem cu doua conexiuni WS de joc deschise in acelasi timp.
+                    gameViewModel.leaveLobby()
+                    val playerName = PlayerPrefs.getPlayerName(context)
+                    gameViewModel.joinRoom(playerName, roomCodeToJoin)
+                    navController.navigate(Routes.WAITING_ROOM) {
+                        popUpTo(Routes.MAIN_MENU) { inclusive = false }
+                    }
+                }) {
+                    Text("Alatura-te")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { gameViewModel.dismissFriendInvite() }) {
+                    Text("Ignora")
+                }
+            }
+        )
     }
 }
 
