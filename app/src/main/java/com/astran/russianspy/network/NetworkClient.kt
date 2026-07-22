@@ -165,12 +165,8 @@ class NetworkClient(
         })
     }
 
-    fun connectWebSocket(roomCode: String, playerId: String, accountId: String? = null) {
-        val url = if (accountId != null) {
-            "${ServerConfig.WS_BASE}/ws/$roomCode/$playerId?account_id=$accountId"
-        } else {
-            "${ServerConfig.WS_BASE}/ws/$roomCode/$playerId"
-        }
+    fun connectWebSocket(roomCode: String, playerId: String) {
+        val url = "${ServerConfig.WS_BASE}/ws/$roomCode/$playerId"
         val request = Request.Builder().url(url).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) {
