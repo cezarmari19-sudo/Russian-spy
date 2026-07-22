@@ -17,10 +17,11 @@ app.add_middleware(
 
 active_connections: dict[str, dict[str, WebSocket]] = {}
 
-# Mapare GLOBALA (nu per camera) accountId -> WebSocket-ul conectat acum, daca
-# jucatorul respectiv are un cont (accountId trimis ca query param optional la
-# conectare). Folosita STRICT pentru invitatii de prietenie live - daca
-# prietenul nu e in aceasta mapare, inseamna ca nu e conectat acum si
+# Mapare GLOBALA accountId -> WebSocket-ul de "prezenta" conectat acum
+# (populata de endpoint-ul /ws/account/{account_id} de mai jos, deschis de
+# client o singura data la pornirea aplicatiei, independent de camerele de
+# joc). Folosita STRICT pentru invitatii de prietenie live - daca prietenul nu
+# e in aceasta mapare, inseamna ca nu are aplicatia deschisa acum si
 # invitatia nu poate fi livrata (nu se stocheaza, se pierde, conform cerintei).
 account_connections: dict[str, WebSocket] = {}
 
@@ -59,18 +60,38 @@ async def broadcast_lobby_update(room_code: str):
     })
 
 
+@app.websocket("/ws/account/{account_id}")
+async def account_presence_websocket(websocket: WebSocket, account_id: str):
+    """Conexiune GLOBALA de 'prezenta', independenta de camerele de joc.
+
+    Clientul o deschide o singura data, la pornirea aplicatiei (cat timp exista
+    un accountId salvat local), si o tine deschisa cat timp aplicatia e activa -
+    indiferent daca jucatorul e in meniul principal, in ecranul de prieteni,
+    intr-un lobby sau intr-un meci. Astfel invitatiile live de la prieteni
+    (friend_room_invite) pot fi livrate oriunde in aplicatie, nu doar cand
+    jucatorul e deja conectat la o camera de joc.
+    """
+    await websocket.accept()
+    account_connections[account_id] = websocket
+
+    try:
+        while True:
+            # Nu asteptam nicio actiune de la client pe acest canal - e strict
+            # pentru livrare de evenimente server->client (invitatii). Doar
+            # tinem conexiunea deschisa si ignoram orice ar trimite clientul.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        if account_connections.get(account_id) is websocket:
+            account_connections.pop(account_id, None)
+
+
 @app.websocket("/ws/{room_code}/{player_id}")
-async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: str, account_id: str = None):
+async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: str):
     await websocket.accept()
 
     if room_code not in active_connections:
         active_connections[room_code] = {}
     active_connections[room_code][player_id] = websocket
-
-    # Daca clientul a trimis un accountId (sistemul de prieteni), il inregistram
-    # aici, ca sa poata primi invitatii live de la prieteni cat timp e conectat.
-    if account_id:
-        account_connections[account_id] = websocket
 
     if room_code not in last_positions:
         last_positions[room_code] = {}
@@ -178,12 +199,6 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
             del active_connections[room_code][player_id]
         if room_code in last_positions and player_id in last_positions[room_code]:
             del last_positions[room_code][player_id]
-
-        # Scoatem accountId-ul din maparea globala DOAR daca acest websocket e
-        # inca cel inregistrat pentru el (evita sa stergem gresit o conexiune
-        # mai noua, daca jucatorul s-a reconectat foarte rapid).
-        if account_id and account_connections.get(account_id) is websocket:
-            account_connections.pop(account_id, None)
 
         # Daca nu mai ramane niciun jucator conectat in camera (fie in LOBBY,
         # fie in timpul meciului), stergem camera automat - nu ramane nimic
