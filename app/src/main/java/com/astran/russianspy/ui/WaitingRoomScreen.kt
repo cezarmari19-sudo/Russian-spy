@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
@@ -19,6 +19,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.astran.russianspy.data.PlayerPrefs
 import com.astran.russianspy.network.AccountApi
+import com.astran.russianspy.ui.theme.SectionLabel
+import com.astran.russianspy.ui.theme.TacticalBackground
+import com.astran.russianspy.ui.theme.TacticalButton
+import com.astran.russianspy.ui.theme.TacticalCard
+import com.astran.russianspy.ui.theme.TacticalColors
 import com.astran.russianspy.viewmodel.GameViewModel
 
 private const val MIN_PLAYERS = 1
@@ -48,7 +53,7 @@ fun WaitingRoomScreen(
     val roomCode = gameState?.roomCode ?: ""
     val canStart = isHost && lobbyPlayers.size >= MIN_PLAYERS
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    TacticalBackground {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -63,28 +68,25 @@ fun WaitingRoomScreen(
                     },
                     modifier = Modifier.align(Alignment.CenterStart)
                 ) {
-                    Text("⬅", fontSize = 20.sp)
+                    Text("⬅", fontSize = 20.sp, color = TacticalColors.TextPrimary)
                 }
 
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = "Cod camera",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SectionLabel(text = "Cod camera")
                     Text(
                         text = roomCode,
+                        color = TacticalColors.TextPrimary,
                         fontSize = 40.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Black,
                         letterSpacing = 6.sp
                     )
                     Text(
                         text = "Spune-le celorlalti acest cod ca sa se alature",
                         fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = TacticalColors.TextSecondary
                     )
                 }
             }
@@ -98,9 +100,11 @@ fun WaitingRoomScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Jucatori (${lobbyPlayers.size}/$MAX_PLAYERS)",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold
+                    text = "JUCATORI (${lobbyPlayers.size}/$MAX_PLAYERS)",
+                    color = TacticalColors.TextPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
                 )
                 Row {
                     IconButton(onClick = { showInviteDialog = true }) {
@@ -120,44 +124,65 @@ fun WaitingRoomScreen(
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(lobbyPlayers) { player ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    TacticalCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        accentLeft = player.id == viewModel.localPlayerId.value
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Person,
-                            contentDescription = null,
-                            tint = if (player.connected) Color(0xFF4CAF50) else Color(0xFF9E9E9E)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = player.name,
-                            fontSize = 16.sp,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (player.id == viewModel.localPlayerId.value) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Avatar simplu: cerc cu initiala, culoare derivata din nume -
+                            // da personalitate fara sa adauge un accent nou de culoare
+                            // in restul paletei (fiecare jucator are propria "insigna").
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(avatarColorFor(player.name)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = player.name.take(1).uppercase(),
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
                             Text(
-                                text = "TU",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
+                                text = player.name,
+                                color = if (player.connected) TacticalColors.TextPrimary else TacticalColors.TextMuted,
+                                fontSize = 16.sp,
+                                modifier = Modifier.weight(1f)
                             )
-                        }
-                        if (!player.connected) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "deconectat",
-                                fontSize = 11.sp,
-                                color = Color(0xFF9E9E9E)
-                            )
+
+                            if (player.id == viewModel.localPlayerId.value) {
+                                Text(
+                                    text = "TU",
+                                    fontSize = 11.sp,
+                                    color = TacticalColors.Accent,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                            }
+
+                            if (!player.connected) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "deconectat",
+                                    fontSize = 11.sp,
+                                    color = TacticalColors.TextMuted
+                                )
+                            }
                         }
                     }
                 }
@@ -172,7 +197,7 @@ fun WaitingRoomScreen(
                         ) {
                             Text(
                                 text = "Se conecteaza...",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = TacticalColors.TextMuted
                             )
                         }
                     }
@@ -182,36 +207,32 @@ fun WaitingRoomScreen(
             errorMessage?.let { msg ->
                 Text(
                     text = msg,
-                    color = MaterialTheme.colorScheme.error,
+                    color = TacticalColors.Danger,
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Buton Start (doar host) sau mesaj de asteptare (jucatori normali)
             if (isHost) {
-                Button(
+                TacticalButton(
+                    text = if (canStart) "START" else "MINIM $MIN_PLAYERS JUCATORI NECESARI",
                     onClick = { viewModel.startGame() },
                     enabled = canStart,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                ) {
-                    Text(
-                        text = if (canStart) "START" else "Minim $MIN_PLAYERS jucatori necesari",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                    isPrimary = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
             } else {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(52.dp),
+                        .height(56.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "Se asteapta ca gazda sa inceapa jocul...",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = TacticalColors.TextSecondary,
                         textAlign = TextAlign.Center
                     )
                 }
@@ -229,6 +250,17 @@ fun WaitingRoomScreen(
             onDismiss = { showInviteDialog = false }
         )
     }
+}
+
+/** Culoare de avatar derivata deterministic din nume - fiecare jucator arata mereu la fel. */
+private fun avatarColorFor(name: String): Color {
+    val palette = listOf(
+        Color(0xFF5C6BC0), Color(0xFF00897B), Color(0xFF8D6E63),
+        Color(0xFF3949AB), Color(0xFF43A047), Color(0xFF546E7A),
+        Color(0xFF6D4C41), Color(0xFF00ACC1)
+    )
+    val index = if (name.isEmpty()) 0 else name.sumOf { it.code } % palette.size
+    return palette[index]
 }
 
 @Composable
@@ -253,15 +285,16 @@ private fun InviteFriendDialog(roomCode: String, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Invita un prieten") },
+        containerColor = TacticalColors.Surface,
+        title = { Text("Invita un prieten", color = TacticalColors.TextPrimary) },
         text = {
             Column {
                 if (isLoading) {
                     Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(color = TacticalColors.Accent)
                     }
                 } else if (friends.isEmpty()) {
-                    Text("Nu ai niciun prieten adaugat inca.", fontSize = 13.sp)
+                    Text("Nu ai niciun prieten adaugat inca.", fontSize = 13.sp, color = TacticalColors.TextSecondary)
                 } else {
                     friends.forEach { friend ->
                         Row(
@@ -271,7 +304,7 @@ private fun InviteFriendDialog(roomCode: String, onDismiss: () -> Unit) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(friend.displayName, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Text(friend.displayName, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = TacticalColors.TextPrimary)
                             TextButton(onClick = {
                                 AccountApi.inviteToRoom(accountId, friend.accountId, roomCode) { success, error ->
                                     statusMessage = if (success) {
@@ -281,7 +314,7 @@ private fun InviteFriendDialog(roomCode: String, onDismiss: () -> Unit) {
                                     }
                                 }
                             }) {
-                                Text("Invita")
+                                Text("Invita", color = TacticalColors.Accent)
                             }
                         }
                     }
@@ -289,13 +322,13 @@ private fun InviteFriendDialog(roomCode: String, onDismiss: () -> Unit) {
 
                 statusMessage?.let { msg ->
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(msg, fontSize = 12.sp, color = Color(0xFF4CAF50))
+                    Text(msg, fontSize = 12.sp, color = TacticalColors.Success)
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Inchide")
+                Text("Inchide", color = TacticalColors.TextSecondary)
             }
         }
     )
@@ -305,13 +338,17 @@ private fun InviteFriendDialog(roomCode: String, onDismiss: () -> Unit) {
 private fun LobbySettingsDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Setari camera") },
+        containerColor = TacticalColors.Surface,
+        title = { Text("Setari camera", color = TacticalColors.TextPrimary) },
         text = {
-            Text("Setarile de joc (numar spioni, durata task-uri etc.) vor fi adaugate aici in curand.")
+            Text(
+                "Setarile de joc (numar spioni, durata task-uri etc.) vor fi adaugate aici in curand.",
+                color = TacticalColors.TextSecondary
+            )
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Inchide")
+                Text("Inchide", color = TacticalColors.Accent)
             }
         }
     )
