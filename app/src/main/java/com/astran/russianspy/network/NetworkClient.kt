@@ -20,8 +20,10 @@ sealed class ServerEvent {
     data class SurveillanceEvent(val eventType: String, val fromRoomId: String) : ServerEvent()
     data class SurveillanceCamerasAssigned(val spots: List<CameraSpotInfo>) : ServerEvent()
     data class PlayerDisconnected(val playerId: String) : ServerEvent()
-    data class LobbyUpdate(val players: List<LobbyPlayerInfo>) : ServerEvent()
+    data class LobbyUpdate(val players: List<LobbyPlayerInfo>, val hostId: String) : ServerEvent()
     object RoomDeleted : ServerEvent()
+    object YouWereKicked : ServerEvent()
+    object YouWereBanned : ServerEvent()
     data class FriendRoomInvite(val fromDisplayName: String, val fromFriendCode: String, val roomCode: String) : ServerEvent()
     data class Error(val message: String) : ServerEvent()
 }
@@ -62,8 +64,9 @@ class NetworkClient(
 
     private var webSocket: WebSocket? = null
 
-    fun createRoom(playerId: String, playerName: String, onResult: (roomCode: String?, error: String?) -> Unit) {
-        val url = "${ServerConfig.HTTP_BASE}/create_room?player_id=$playerId&player_name=${playerName}"
+    fun createRoom(playerId: String, playerName: String, accountId: String? = null, onResult: (roomCode: String?, error: String?) -> Unit) {
+        val accountParam = if (accountId != null) "&account_id=$accountId" else ""
+        val url = "${ServerConfig.HTTP_BASE}/create_room?player_id=$playerId&player_name=${playerName}$accountParam"
         val request = Request.Builder().url(url).post(RequestBody.create(null, ByteArray(0))).build()
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: java.io.IOException) {
@@ -86,8 +89,9 @@ class NetworkClient(
         })
     }
 
-    fun joinRoom(playerId: String, playerName: String, roomCode: String, onResult: (success: Boolean, error: String?) -> Unit) {
-        val url = "${ServerConfig.HTTP_BASE}/join_room?room_code=$roomCode&player_id=$playerId&player_name=${playerName}"
+    fun joinRoom(playerId: String, playerName: String, roomCode: String, accountId: String? = null, onResult: (success: Boolean, error: String?) -> Unit) {
+        val accountParam = if (accountId != null) "&account_id=$accountId" else ""
+        val url = "${ServerConfig.HTTP_BASE}/join_room?room_code=$roomCode&player_id=$playerId&player_name=${playerName}$accountParam"
         val request = Request.Builder().url(url).post(RequestBody.create(null, ByteArray(0))).build()
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: java.io.IOException) {
@@ -242,10 +246,12 @@ class NetworkClient(
                         connected = p.optBoolean("connected", true)
                     )
                 }
-                onEvent(ServerEvent.LobbyUpdate(players))
+                onEvent(ServerEvent.LobbyUpdate(players, hostId = json.optString("hostId", "")))
             }
             "error" -> onEvent(ServerEvent.Error(json.optString("message", "Eroare necunoscuta")))
             "room_deleted" -> onEvent(ServerEvent.RoomDeleted)
+            "you_were_kicked" -> onEvent(ServerEvent.YouWereKicked)
+            "you_were_banned" -> onEvent(ServerEvent.YouWereBanned)
             "friend_room_invite" -> onEvent(
                 ServerEvent.FriendRoomInvite(
                     fromDisplayName = json.getString("fromDisplayName"),
@@ -286,6 +292,20 @@ class NetworkClient(
     fun sendDeleteRoom() {
         send(JSONObject().apply {
             put("action", "delete_room")
+        })
+    }
+
+    fun sendKickPlayer(targetPlayerId: String) {
+        send(JSONObject().apply {
+            put("action", "kick_player")
+            put("targetPlayerId", targetPlayerId)
+        })
+    }
+
+    fun sendBanPlayer(targetPlayerId: String) {
+        send(JSONObject().apply {
+            put("action", "ban_player")
+            put("targetPlayerId", targetPlayerId)
         })
     }
 
