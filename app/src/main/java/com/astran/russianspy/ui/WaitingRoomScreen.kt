@@ -25,6 +25,7 @@ import com.astran.russianspy.ui.theme.TacticalButton
 import com.astran.russianspy.ui.theme.TacticalCard
 import com.astran.russianspy.ui.theme.TacticalColors
 import com.astran.russianspy.viewmodel.GameViewModel
+import com.astran.russianspy.viewmodel.RemovalReason
 
 private const val MIN_PLAYERS = 1
 private const val MAX_PLAYERS = 15
@@ -33,20 +34,35 @@ private const val MAX_PLAYERS = 15
 fun WaitingRoomScreen(
     viewModel: GameViewModel,
     onGameStarted: () -> Unit,
-    onLeaveLobby: () -> Unit
+    onLeaveLobby: () -> Unit,
+    onRemovedFromRoom: (RemovalReason) -> Unit
 ) {
     val gameState by viewModel.gameState
     val isHost by viewModel.isHost
     val lobbyPlayers = viewModel.lobbyPlayers
     val gameStarted by viewModel.gameStarted
     val errorMessage by viewModel.errorMessage
+    val removalReason by viewModel.removalReason
 
     var showSettings by remember { mutableStateOf(false) }
     var showInviteDialog by remember { mutableStateOf(false) }
+    var playerForModeration by remember { mutableStateOf<com.astran.russianspy.network.LobbyPlayerInfo?>(null) }
 
     LaunchedEffect(gameStarted) {
         if (gameStarted) {
             onGameStarted()
+        }
+    }
+
+    // Serverul ne-a anuntat ca hostul ne-a dat kick sau ban - conexiunea e deja
+    // inchisa de server, doar curatam starea locala si navigam afara cu mesajul
+    // potrivit (WaitingRoomScreen dispare, deci UI-ul nu mai are cui sa arate nimic).
+    LaunchedEffect(removalReason) {
+        val reason = removalReason
+        if (reason != null) {
+            viewModel.acknowledgeRemoval()
+            viewModel.leaveLobby()
+            onRemovedFromRoom(reason)
         }
     }
 
@@ -173,6 +189,15 @@ fun WaitingRoomScreen(
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 1.sp
                                 )
+                            } else if (isHost) {
+                                // Doar hostul vede acest buton, si doar pe randurile altor
+                                // jucatori - nu isi poate da kick/ban singur.
+                                IconButton(
+                                    onClick = { playerForModeration = player },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Text("⋮", color = TacticalColors.TextSecondary, fontSize = 18.sp)
+                                }
                             }
 
                             if (!player.connected) {
@@ -248,6 +273,21 @@ fun WaitingRoomScreen(
         InviteFriendDialog(
             roomCode = roomCode,
             onDismiss = { showInviteDialog = false }
+        )
+    }
+
+    playerForModeration?.let { target ->
+        ModeratePlayerDialog(
+            playerName = target.name,
+            onDismiss = { playerForModeration = null },
+            onKick = {
+                viewModel.kickPlayer(target.id)
+                playerForModeration = null
+            },
+            onBan = {
+                viewModel.banPlayer(target.id)
+                playerForModeration = null
+            }
         )
     }
 }
@@ -329,6 +369,44 @@ private fun InviteFriendDialog(roomCode: String, onDismiss: () -> Unit) {
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("Inchide", color = TacticalColors.TextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+private fun ModeratePlayerDialog(
+    playerName: String,
+    onDismiss: () -> Unit,
+    onKick: () -> Unit,
+    onBan: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = TacticalColors.Surface,
+        title = { Text(playerName, color = TacticalColors.TextPrimary) },
+        text = {
+            Column {
+                Text(
+                    "Kick: poate reintra oricand cu acelasi cod.\nBan: nu se mai poate intoarce in aceasta camera.",
+                    color = TacticalColors.TextSecondary,
+                    fontSize = 13.sp
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onBan) {
+                Text("BAN", color = TacticalColors.Danger, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDismiss) {
+                    Text("Anuleaza", color = TacticalColors.TextSecondary)
+                }
+                TextButton(onClick = onKick) {
+                    Text("KICK", color = TacticalColors.Accent, fontWeight = FontWeight.Bold)
+                }
             }
         }
     )
