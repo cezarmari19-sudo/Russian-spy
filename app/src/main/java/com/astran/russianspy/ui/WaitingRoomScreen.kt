@@ -266,7 +266,7 @@ fun WaitingRoomScreen(
     }
 
     if (showSettings) {
-        LobbySettingsDialog(onDismiss = { showSettings = false })
+        LobbySettingsDialog(viewModel = viewModel, onDismiss = { showSettings = false })
     }
 
     if (showInviteDialog) {
@@ -413,16 +413,57 @@ private fun ModeratePlayerDialog(
 }
 
 @Composable
-private fun LobbySettingsDialog(onDismiss: () -> Unit) {
+private fun LobbySettingsDialog(viewModel: GameViewModel, onDismiss: () -> Unit) {
+    val isPrivate by viewModel.roomIsPrivate
+    val isUpdating by viewModel.roomPrivacyUpdating
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = TacticalColors.Surface,
         title = { Text("Setari camera", color = TacticalColors.TextPrimary) },
         text = {
-            Text(
-                "Setarile de joc (numar spioni, durata task-uri etc.) vor fi adaugate aici in curand.",
-                color = TacticalColors.TextSecondary
-            )
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (isPrivate) "Camera privata" else "Camera publica",
+                            color = TacticalColors.TextPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                        Text(
+                            text = if (isPrivate) {
+                                "Nu apare in lista de lobby-uri publice. Se poate intra doar cu codul."
+                            } else {
+                                "Apare in lista de lobby-uri publice, oricine o poate gasi."
+                            },
+                            color = TacticalColors.TextSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+                    Switch(
+                        checked = isPrivate,
+                        onCheckedChange = { checked -> viewModel.setRoomPrivacy(checked) },
+                        enabled = !isUpdating,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = TacticalColors.Accent,
+                            checkedTrackColor = TacticalColors.AccentDim
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    "Setarile de joc (numar spioni, durata task-uri etc.) vor fi adaugate aici in curand.",
+                    color = TacticalColors.TextSecondary,
+                    fontSize = 13.sp
+                )
+            }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
