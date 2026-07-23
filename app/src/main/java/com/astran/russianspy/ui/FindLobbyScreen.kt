@@ -95,7 +95,8 @@ fun FindLobbyScreen(
                 text = "INTRA IN CAMERA",
                 onClick = {
                     val playerName = PlayerPrefs.getPlayerName(context)
-                    viewModel.joinRoom(playerName, roomCode)
+                    val accountId = PlayerPrefs.getAccountId(context)
+                    viewModel.joinRoom(playerName, roomCode, accountId)
                 },
                 enabled = roomCode.isNotBlank(),
                 isPrimary = true,
