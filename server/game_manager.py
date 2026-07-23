@@ -71,10 +71,10 @@ class GameManager:
             if code not in self.rooms:
                 return code
 
-    def create_room(self, host_player_id: str, host_name: str) -> GameRoom:
+    def create_room(self, host_player_id: str, host_name: str, account_id: Optional[str] = None) -> GameRoom:
         code = self._generate_room_code()
         room = GameRoom(room_code=code, host_id=host_player_id)
-        host = Player(id=host_player_id, name=host_name, current_room_id="entrance")
+        host = Player(id=host_player_id, name=host_name, current_room_id="entrance", account_id=account_id)
         room.players[host_player_id] = host
         self.rooms[code] = room
         return room
@@ -100,7 +100,9 @@ class GameManager:
             return False
         return any(p.connected for p in room.players.values())
 
-    def join_room(self, room_code: str, player_id: str, player_name: str) -> tuple[Optional[GameRoom], Optional[str]]:
+    def join_room(
+        self, room_code: str, player_id: str, player_name: str, account_id: Optional[str] = None
+    ) -> tuple[Optional[GameRoom], Optional[str]]:
         room = self.rooms.get(room_code)
         if room is None:
             return None, "Camera nu exista"
@@ -108,8 +110,10 @@ class GameManager:
             return None, "Jocul a inceput deja"
         if len(room.players) >= MAX_PLAYERS:
             return None, "Camera este plina"
+        if account_id and account_id in room.banned_account_ids:
+            return None, "Ai fost banat din aceasta camera"
 
-        player = Player(id=player_id, name=player_name, current_room_id="entrance")
+        player = Player(id=player_id, name=player_name, current_room_id="entrance", account_id=account_id)
         room.players[player_id] = player
         return room, None
 
@@ -119,6 +123,69 @@ class GameManager:
             return
         if player_id in room.players:
             room.players[player_id].connected = False
+        self._migrate_host_if_needed(room)
+
+    def _migrate_host_if_needed(self, room: GameRoom):
+        """Daca host-ul curent nu mai e conectat SI suntem inca in LOBBY, promoveaza
+        automat un alt jucator conectat la host (stil Among Us). In timpul
+        meciului (IN_PROGRESS) nu schimbam host-ul - nu are sens sa transferi
+        controale de lobby (start/kick/ban) dupa ce jocul a inceput deja."""
+        if room.phase.value != "LOBBY":
+            return
+        current_host = room.players.get(room.host_id)
+        if current_host is not None and current_host.connected:
+            return  # host-ul curent e inca aici, nimic de facut
+
+        for pid, player in room.players.items():
+            if player.connected:
+                room.host_id = pid
+                return
+        # daca nu mai e nimeni conectat, host_id ramane cum era (camera oricum
+        # va fi stearsa automat de main.py cand ultimul WS se deconecteaza)
+
+    def kick_player(self, room_code: str, requesting_player_id: str, target_player_id: str) -> Optional[str]:
+        """Scoate un jucator din camera FARA sa il banze - poate reintra oricand
+        cu acelasi cod. Doar host-ul poate da kick, doar in LOBBY, si nu isi
+        poate da kick lui insusi."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if room.phase.value != "LOBBY":
+            return "Nu poti da kick in timpul meciului"
+        if requesting_player_id != room.host_id:
+            return "Doar hostul poate da kick"
+        if target_player_id == requesting_player_id:
+            return "Nu iti poti da kick tie insuti"
+        if target_player_id not in room.players:
+            return "Jucator invalid"
+
+        del room.players[target_player_id]
+        return None
+
+    def ban_player(self, room_code: str, requesting_player_id: str, target_player_id: str) -> Optional[str]:
+        """La fel ca kick, dar retine accountId-ul jucatorului in banned_account_ids -
+        nu se va mai putea alatura acestei camere cat timp exista ea, chiar daca
+        reintra cu alt playerId. Daca jucatorul nu are accountId (nu a deschis
+        niciodata ecranul de Prieteni si PlayerPrefs nu l-a generat inca - caz
+        rar), banul se comporta ca un simplu kick, fara persistenta."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if room.phase.value != "LOBBY":
+            return "Nu poti da ban in timpul meciului"
+        if requesting_player_id != room.host_id:
+            return "Doar hostul poate da ban"
+        if target_player_id == requesting_player_id:
+            return "Nu iti poti da ban tie insuti"
+
+        target = room.players.get(target_player_id)
+        if target is None:
+            return "Jucator invalid"
+
+        if target.account_id:
+            room.banned_account_ids.add(target.account_id)
+        del room.players[target_player_id]
+        return None
 
     def start_game(self, room_code: str) -> Optional[str]:
         room = self.rooms.get(room_code)
