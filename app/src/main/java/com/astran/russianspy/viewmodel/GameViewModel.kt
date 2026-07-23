@@ -30,6 +30,9 @@ data class SurveillanceCameraSpot(val roomId: String, val x: Float, val y: Float
 /** O invitatie live primita de la un prieten, catre camera lui de joc. */
 data class FriendRoomInviteInfo(val fromDisplayName: String, val fromFriendCode: String, val roomCode: String)
 
+/** De ce am fost scosi din camera curenta de catre host. */
+enum class RemovalReason { KICKED, BANNED }
+
 class GameViewModel : ViewModel() {
 
     private val _gameState = mutableStateOf<GameState?>(null)
@@ -76,6 +79,26 @@ class GameViewModel : ViewModel() {
         networkClient?.sendDeleteRoom()
     }
 
+    /** Doar host-ul poate da kick (verificat si pe server) - jucatorul poate reintra oricand cu acelasi cod. */
+    fun kickPlayer(targetPlayerId: String) {
+        networkClient?.sendKickPlayer(targetPlayerId)
+    }
+
+    /** Doar host-ul poate da ban (verificat si pe server) - jucatorul NU se mai poate intoarce in aceasta camera. */
+    fun banPlayer(targetPlayerId: String) {
+        networkClient?.sendBanPlayer(targetPlayerId)
+    }
+
+    // Devine "KICKED" sau "BANNED" cand serverul ne anunta ca hostul ne-a scos din
+    // camera curenta - WaitingRoomScreen observa asta si navigheaza inapoi la meniu,
+    // afisand mesajul potrivit. null inseamna "nimic de aratat".
+    private val _removalReason = mutableStateOf<RemovalReason?>(null)
+    val removalReason: State<RemovalReason?> = _removalReason
+
+    fun acknowledgeRemoval() {
+        _removalReason.value = null
+    }
+
     /**
      * Iesire manuala din LOBBY (camera de asteptare, inainte sa inceapa jocul) -
      * apelata din butonul de iesire din WaitingRoomScreen. Anunta serverul ca a
@@ -91,6 +114,7 @@ class GameViewModel : ViewModel() {
         _isHost.value = false
         _errorMessage.value = null
         _currentRoomId.value = "entrance"
+        _removalReason.value = null
 
         lobbyPlayers.clear()
         playerNames.clear()
@@ -195,7 +219,7 @@ class GameViewModel : ViewModel() {
 
     private var networkClient: NetworkClient? = null
 
-    fun createRoom(playerName: String) {
+    fun createRoom(playerName: String, accountId: String? = null) {
         val playerId = generatePlayerId()
         _localPlayerId.value = playerId
         _localPlayerName.value = playerName
@@ -204,7 +228,7 @@ class GameViewModel : ViewModel() {
         val client = NetworkClient(onEvent = ::handleServerEvent)
         networkClient = client
 
-        client.createRoom(playerId, playerName) { roomCode, error ->
+        client.createRoom(playerId, playerName, accountId) { roomCode, error ->
             if (error != null || roomCode == null) {
                 _errorMessage.value = error ?: "Eroare necunoscuta la crearea camerei"
                 return@createRoom
@@ -221,7 +245,7 @@ class GameViewModel : ViewModel() {
         }
     }
 
-    fun joinRoom(playerName: String, roomCode: String) {
+    fun joinRoom(playerName: String, roomCode: String, accountId: String? = null) {
         val playerId = generatePlayerId()
         _localPlayerId.value = playerId
         _localPlayerName.value = playerName
@@ -230,7 +254,7 @@ class GameViewModel : ViewModel() {
         val client = NetworkClient(onEvent = ::handleServerEvent)
         networkClient = client
 
-        client.joinRoom(playerId, playerName, roomCode) { success, error ->
+        client.joinRoom(playerId, playerName, roomCode, accountId) { success, error ->
             if (!success) {
                 _errorMessage.value = error ?: "Nu m-am putut alatura camerei"
                 return@joinRoom
@@ -305,6 +329,18 @@ class GameViewModel : ViewModel() {
                 lobbyPlayers.clear()
                 lobbyPlayers.addAll(event.players)
                 event.players.forEach { playerNames[it.id] = it.name }
+                // Hostul se poate schimba automat pe server (daca hostul anterior a
+                // plecat din LOBBY) - recalculam mereu local din hostId primit, in loc
+                // sa tinem minte doar starea initiala setata la create/joinRoom.
+                if (event.hostId.isNotEmpty()) {
+                    _isHost.value = (event.hostId == _localPlayerId.value)
+                }
+            }
+            is ServerEvent.YouWereKicked -> {
+                _removalReason.value = RemovalReason.KICKED
+            }
+            is ServerEvent.YouWereBanned -> {
+                _removalReason.value = RemovalReason.BANNED
             }
             is ServerEvent.PositionsSnapshot -> {
                 event.positions.forEach { info ->
