@@ -36,6 +36,10 @@ class Player:
     current_room_id: str = "entrance"
     is_wearing_gloves: bool = False
     connected: bool = True
+    # accountId-ul persistent al jucatorului (din PlayerPrefs, pe telefon), daca a
+    # fost trimis la conectare. Folosit STRICT pentru sistemul de ban - fara el,
+    # un ban ar tine minte doar playerId-ul efemer si ar fi inutil.
+    account_id: Optional[str] = None
 
     def to_dict(self, reveal_role: bool = False):
         return {
@@ -126,6 +130,12 @@ class GameRoom:
     # {"roomId": str, "x": float, "y": float} - generate random la start_game(),
     # aceleasi pentru toti jucatorii din runda respectiva.
     surveillance_cameras: list[dict] = field(default_factory=list)
+    # accountId-urile banate din ACEASTA camera (stil Among Us: ban = nu se mai
+    # poate intoarce cat timp exista camera; kick = poate reintra). Legat de
+    # accountId (persistent, salvat local pe telefon), NU de playerId (care e
+    # generat nou la fiecare creare/alaturare de camera si ar face banul inutil -
+    # jucatorul dat afara s-ar putea reconecta instant cu alt playerId).
+    banned_account_ids: set[str] = field(default_factory=set)
 
     def alive_fbi_agents(self) -> list[Player]:
         return [p for p in self.players.values() if p.is_alive and p.role == Role.FBI_AGENT]
