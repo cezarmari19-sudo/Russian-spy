@@ -139,7 +139,8 @@ fun PublicLobbiesScreen(
                         onJoin = {
                             joiningRoomCode = room.roomCode
                             val playerName = PlayerPrefs.getPlayerName(context)
-                            viewModel.joinRoom(playerName, room.roomCode)
+                            val accountId = PlayerPrefs.getAccountId(context)
+                            viewModel.joinRoom(playerName, room.roomCode, accountId)
                         }
                     )
                 }
