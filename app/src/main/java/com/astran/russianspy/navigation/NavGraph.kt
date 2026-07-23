@@ -58,6 +58,7 @@ fun RussianSpyNavGraph() {
     val navController = rememberNavController()
     val gameViewModel: GameViewModel = viewModel()
     val context = LocalContext.current
+    var removalToastMessage by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
 
     // Pornim conexiunea GLOBALA de prezenta (pentru invitatii de prieteni) o
     // singura data, la lansarea aplicatiei - ramane activa in tot navigatia,
@@ -136,6 +137,15 @@ fun RussianSpyNavGraph() {
                         // La fel ca la iesirea din meci: curatam stack-ul pana la
                         // MAIN_MENU (inclusiv WAITING_ROOM/LOBBY/FIND_LOBBY), ca
                         // sa nu ramana ecrane vechi de lobby in spate.
+                        navController.navigate(Routes.MAIN_MENU) {
+                            popUpTo(Routes.MAIN_MENU) { inclusive = true }
+                        }
+                    },
+                    onRemovedFromRoom = { reason ->
+                        removalToastMessage = when (reason) {
+                            com.astran.russianspy.viewmodel.RemovalReason.KICKED -> "Ai fost scos din camera de host."
+                            com.astran.russianspy.viewmodel.RemovalReason.BANNED -> "Ai fost banat din aceasta camera."
+                        }
                         navController.navigate(Routes.MAIN_MENU) {
                             popUpTo(Routes.MAIN_MENU) { inclusive = true }
                         }
@@ -280,6 +290,39 @@ fun RussianSpyNavGraph() {
                             Text("Alatura-te", fontSize = 13.sp)
                         }
                     }
+                }
+            }
+        }
+
+        // Mesaj scurt, jos de tot, cand esti dat afara dintr-o camera (kick/ban) -
+        // dispare automat dupa cateva secunde, ca un toast.
+        val toastMsg = removalToastMessage
+        AnimatedVisibility(
+            visible = toastMsg != null,
+            enter = slideInVertically(animationSpec = tween(300)) { it },
+            exit = slideOutVertically(animationSpec = tween(250)) { it },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 24.dp, start = 16.dp, end = 16.dp)
+        ) {
+            if (toastMsg != null) {
+                LaunchedEffect(toastMsg) {
+                    kotlinx.coroutines.delay(4000)
+                    removalToastMessage = null
+                }
+                Surface(
+                    shape = com.astran.russianspy.ui.theme.tacticalCardShapePublic(12.dp),
+                    color = TacticalColors.Surface,
+                    shadowElevation = 8.dp,
+                    border = BorderStroke(1.dp, TacticalColors.Border),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = toastMsg,
+                        color = TacticalColors.TextPrimary,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(14.dp)
+                    )
                 }
             }
         }
