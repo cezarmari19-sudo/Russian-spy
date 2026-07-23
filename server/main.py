@@ -56,7 +56,8 @@ async def broadcast_lobby_update(room_code: str):
     ]
     await broadcast_to_room(room_code, {
         "type": "lobby_update",
-        "players": players_payload
+        "players": players_payload,
+        "hostId": room.host_id
     })
 
 
@@ -173,6 +174,32 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         "spots": room.surveillance_cameras
                     })
 
+            elif action == "kick_player" or action == "ban_player":
+                target_player_id = data.get("targetPlayerId", "")
+                if action == "kick_player":
+                    error = game_manager.kick_player(room_code, player_id, target_player_id)
+                    kicked_message_type = "you_were_kicked"
+                else:
+                    error = game_manager.ban_player(room_code, player_id, target_player_id)
+                    kicked_message_type = "you_were_banned"
+
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    # Anuntam TINTA inainte sa-i inchidem conexiunea, ca sa stie
+                    # exact de ce a fost deconectata (nu doar "player_disconnected").
+                    target_ws = active_connections.get(room_code, {}).get(target_player_id)
+                    if target_ws is not None:
+                        try:
+                            await target_ws.send_text(json.dumps({"type": kicked_message_type}))
+                            await target_ws.close()
+                        except Exception:
+                            pass
+                        active_connections.get(room_code, {}).pop(target_player_id, None)
+                        last_positions.get(room_code, {}).pop(target_player_id, None)
+
+                    await broadcast_lobby_update(room_code)
+
             elif action == "delete_room":
                 error = game_manager.delete_room(room_code, player_id)
                 if error:
@@ -217,14 +244,14 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
 
 
 @app.post("/create_room")
-async def create_room(player_id: str, player_name: str):
-    room = game_manager.create_room(player_id, player_name)
+async def create_room(player_id: str, player_name: str, account_id: str = None):
+    room = game_manager.create_room(player_id, player_name, account_id)
     return {"roomCode": room.room_code}
 
 
 @app.post("/join_room")
-async def join_room(room_code: str, player_id: str, player_name: str):
-    room, error = game_manager.join_room(room_code, player_id, player_name)
+async def join_room(room_code: str, player_id: str, player_name: str, account_id: str = None):
+    room, error = game_manager.join_room(room_code, player_id, player_name, account_id)
     if error:
         return {"error": error}
     return {"success": True}
