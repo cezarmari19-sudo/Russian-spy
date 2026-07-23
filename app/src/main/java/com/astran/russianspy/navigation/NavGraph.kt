@@ -283,7 +283,8 @@ fun RussianSpyNavGraph() {
                                 // sa nu ramanem cu doua conexiuni WS de joc deschise odata.
                                 gameViewModel.leaveLobby()
                                 val playerName = PlayerPrefs.getPlayerName(context)
-                                gameViewModel.joinRoom(playerName, roomCodeToJoin)
+                                val accountId = PlayerPrefs.getAccountId(context)
+                                gameViewModel.joinRoom(playerName, roomCodeToJoin, accountId)
                                 navController.navigate(Routes.WAITING_ROOM) {
                                     popUpTo(Routes.MAIN_MENU) { inclusive = false }
                                 }
