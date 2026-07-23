@@ -25,6 +25,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,7 +62,7 @@ fun RussianSpyNavGraph() {
     val navController = rememberNavController()
     val gameViewModel: GameViewModel = viewModel()
     val context = LocalContext.current
-    var removalToastMessage by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var removalToastMessage by remember { mutableStateOf<String?>(null) }
 
     // Pornim conexiunea GLOBALA de prezenta (pentru invitatii de prieteni) o
     // singura data, la lansarea aplicatiei - ramane activa in tot navigatia,
@@ -306,7 +310,8 @@ fun RussianSpyNavGraph() {
                 .padding(bottom = 24.dp, start = 16.dp, end = 16.dp)
         ) {
             if (toastMsg != null) {
-                LaunchedEffect(toastMsg) {
+                val safeMsg: String = toastMsg
+                LaunchedEffect(safeMsg) {
                     kotlinx.coroutines.delay(4000)
                     removalToastMessage = null
                 }
@@ -318,7 +323,7 @@ fun RussianSpyNavGraph() {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = toastMsg,
+                        text = safeMsg,
                         color = TacticalColors.TextPrimary,
                         fontSize = 14.sp,
                         modifier = Modifier.padding(14.dp)
