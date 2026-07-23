@@ -89,6 +89,30 @@ class GameViewModel : ViewModel() {
         networkClient?.sendBanPlayer(targetPlayerId)
     }
 
+    // Daca aceasta camera e privata (nu apare in lista de lobby-uri publice) sau
+    // publica (implicit). Doar host-ul poate schimba - verificat si pe server.
+    private val _roomIsPrivate = mutableStateOf(false)
+    val roomIsPrivate: State<Boolean> = _roomIsPrivate
+
+    // true cat timp o cerere de schimbare privat/public e in asteptare - dezactiveaza
+    // switch-ul din UI ca sa evitam apeluri multiple suprapuse la un singur tap rapid.
+    private val _roomPrivacyUpdating = mutableStateOf(false)
+    val roomPrivacyUpdating: State<Boolean> = _roomPrivacyUpdating
+
+    fun setRoomPrivacy(isPrivate: Boolean) {
+        val roomCode = _gameState.value?.roomCode ?: return
+        val playerId = _localPlayerId.value
+        _roomPrivacyUpdating.value = true
+        NetworkClient(onEvent = {}).setRoomPrivacy(roomCode, playerId, isPrivate) { success, error ->
+            _roomPrivacyUpdating.value = false
+            if (success) {
+                _roomIsPrivate.value = isPrivate
+            } else {
+                _errorMessage.value = error ?: "Nu am putut schimba vizibilitatea camerei"
+            }
+        }
+    }
+
     // Devine "KICKED" sau "BANNED" cand serverul ne anunta ca hostul ne-a scos din
     // camera curenta - WaitingRoomScreen observa asta si navigheaza inapoi la meniu,
     // afisand mesajul potrivit. null inseamna "nimic de aratat".
@@ -115,6 +139,7 @@ class GameViewModel : ViewModel() {
         _errorMessage.value = null
         _currentRoomId.value = "entrance"
         _removalReason.value = null
+        _roomIsPrivate.value = false
 
         lobbyPlayers.clear()
         playerNames.clear()
