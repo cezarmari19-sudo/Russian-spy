@@ -93,21 +93,32 @@ fun TacticalBackground(modifier: Modifier = Modifier, content: @Composable () ->
 /**
  * Forma cu COLT TAIAT (nu rotunjit) in stanga-sus si dreapta-jos - da un aspect
  * de "placuta/insigna tactica", nu un dreptunghi generic de UI web/AI.
+ *
+ * GenericShape NU primeste un Density in lambda-ul sau (doar Size si
+ * LayoutDirection), asa ca primeste direct taietura in PIXELI (nu Dp) -
+ * conversia se face la locul apelului, in interiorul unui @Composable, cu
+ * LocalDensity.current.
  */
-private fun cutCornerShape(cut: Dp) = GenericShape { size, density ->
-    with(density) {
-        val c = cut.toPx()
-        moveTo(c, 0f)
-        lineTo(size.width, 0f)
-        lineTo(size.width, size.height - c)
-        lineTo(size.width - c, size.height)
-        lineTo(0f, size.height)
-        lineTo(0f, c)
-        close()
-    }
+private fun cutCornerShapePx(cutPx: Float) = GenericShape { size, _ ->
+    moveTo(cutPx, 0f)
+    lineTo(size.width, 0f)
+    lineTo(size.width, size.height - cutPx)
+    lineTo(size.width - cutPx, size.height)
+    lineTo(0f, size.height)
+    lineTo(0f, cutPx)
+    close()
+}
+
+/** Versiune @Composable care converteste Dp -> px folosind densitatea ecranului curent. */
+@Composable
+private fun cutCornerShape(cut: Dp): androidx.compose.ui.graphics.Shape {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val cutPx = with(density) { cut.toPx() }
+    return remember(cutPx) { cutCornerShapePx(cutPx) }
 }
 
 /** Versiune publica a formei cu colt taiat, pentru folosire in afara acestui fisier (ex. NavGraph). */
+@Composable
 fun tacticalCardShapePublic(cut: Dp) = cutCornerShape(cut)
 
 /**
