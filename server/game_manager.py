@@ -3,7 +3,10 @@ import string
 import time
 from typing import Optional
 
-from models import GameRoom, GamePhase, Player, Role, RoomFunction, Room
+from models import (
+    GameRoom, GamePhase, Player, Role, RoomFunction, Room,
+    SpyTaskType, SpyTaskInstance, SPY_TASK_ALLOWED_FUNCTIONS,
+)
 
 
 # ATENTIE: aceste coordonate (x, y, width, height) TREBUIE sa ramana identice cu
@@ -203,7 +206,116 @@ class GameManager:
 
         room.phase = room.phase.__class__.IN_PROGRESS
         room.surveillance_cameras = self._generate_random_camera_spots()
+        room.spy_tasks = self._generate_spy_tasks(room)
         return None
+
+    def set_spy_task_count(self, room_code: str, requesting_player_id: str, count: int) -> Optional[str]:
+        """Doar host-ul poate seta cate task-uri primeste spionul (2-12), si doar
+        inainte ca jocul sa inceapa (in LOBBY) - schimbarea in timpul meciului
+        nu are sens, task-urile sunt deja alocate."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if requesting_player_id != room.host_id:
+            return "Doar hostul poate schimba aceasta setare"
+        if room.phase != GamePhase.LOBBY:
+            return "Nu poti schimba numarul de task-uri in timpul meciului"
+        if count < 2 or count > 12:
+            return "Numarul de task-uri trebuie sa fie intre 2 si 12"
+        room.spy_task_count = count
+        return None
+
+    def _generate_spy_tasks(self, room: GameRoom) -> list[SpyTaskInstance]:
+        """Alege random `room.spy_task_count` task-uri din catalogul complet
+        SpyTaskType, fiecare cu o camera valida random (pentru HACK_SURVEILLANCE_CAMERA,
+        doar camerele care au chiar o camera de supraveghere activa in aceasta
+        runda). Daca un tip de task nu are nicio camera valida disponibila (caz
+        rar), e sarit si se alege alt tip in locul lui."""
+        all_task_types = list(SpyTaskType)
+        random.shuffle(all_task_types)
+
+        surveillance_room_ids = [cam["roomId"] for cam in room.surveillance_cameras]
+
+        tasks: list[SpyTaskInstance] = []
+        type_index = 0
+        attempts = 0
+        # attempts previne o bucla infinita daca niciun tip nu mai are camere valide
+        while len(tasks) < room.spy_task_count and attempts < len(all_task_types) * 3:
+            task_type = all_task_types[type_index % len(all_task_types)]
+            type_index += 1
+            attempts += 1
+
+            if task_type == SpyTaskType.HACK_SURVEILLANCE_CAMERA:
+                valid_room_ids = surveillance_room_ids
+            else:
+                allowed_functions = SPY_TASK_ALLOWED_FUNCTIONS.get(task_type.value, [])
+                valid_room_ids = [r.id for r in BUILDING_LAYOUT if r.function in allowed_functions]
+
+            if not valid_room_ids:
+                continue
+
+            chosen_room_id = random.choice(valid_room_ids)
+            tasks.append(SpyTaskInstance(
+                id=f"task_{len(tasks)}_{random.randint(1000, 9999)}",
+                task_type=task_type.value,
+                room_id=chosen_room_id,
+            ))
+
+        return tasks
+
+    def complete_spy_task(self, room_code: str, player_id: str, task_id: str) -> Optional[str]:
+        """Marcheaza un task de spion ca finalizat. Doar spionul insusi poate
+        completa propriile task-uri (verificat prin rolul jucatorului, nu doar
+        prin id - un agent FBI care ar trimite acest mesaj manual e respins)."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        player = room.players.get(player_id)
+        if player is None or player.role != Role.RUSSIAN_SPY:
+            return "Doar spionul poate completa acest task"
+
+        task = next((t for t in room.spy_tasks if t.id == task_id), None)
+        if task is None:
+            return "Task invalid"
+        task.is_completed = True
+        return None
+
+    def disable_spy_device(self, room_code: str, player_id: str, task_id: str) -> Optional[str]:
+        """Un agent FBI a gasit un dispozitiv plasat de spion (ascultare sau
+        camera hacked) si il dezactiveaza - reseteaza is_completed la False,
+        spionul trebuie sa il refaca ca sa mai conteze pentru victorie. Doar
+        task-urile de tip PLANT_LISTENING_DEVICE / HACK_SURVEILLANCE_CAMERA pot
+        fi dezactivate (celelalte, ca fotografiatul, nu lasa in urma un obiect
+        fizic de gasit)."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        player = room.players.get(player_id)
+        if player is None or player.role != Role.FBI_AGENT:
+            return "Doar un agent FBI poate dezactiva un dispozitiv"
+
+        task = next((t for t in room.spy_tasks if t.id == task_id), None)
+        if task is None:
+            return "Dispozitiv invalid"
+        if task.task_type not in (
+            SpyTaskType.PLANT_LISTENING_DEVICE.value,
+            SpyTaskType.HACK_SURVEILLANCE_CAMERA.value,
+        ):
+            return "Acest tip de task nu poate fi dezactivat"
+        if not task.is_completed:
+            return "Dispozitivul nu a fost inca plasat"
+
+        task.is_completed = False
+        return None
+
+    def check_spy_win(self, room_code: str) -> bool:
+        """True daca toate task-urile spionului sunt completate ACUM (nu au fost
+        dezactivate ulterior de un agent) - victorie automata a spionului, la
+        fel ca la Among Us cand crewmate-ii termina toate task-urile."""
+        room = self.rooms.get(room_code)
+        if room is None or not room.spy_tasks:
+            return False
+        return all(t.is_completed for t in room.spy_tasks)
 
     def _generate_random_camera_spots(self, count: int = 4) -> list[dict]:
         """Alege `count` camere random (excluzand holurile) si un punct random exact
