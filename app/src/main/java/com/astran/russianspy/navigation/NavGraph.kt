@@ -51,6 +51,7 @@ import com.astran.russianspy.ui.GameCanvasScreen
 import com.astran.russianspy.ui.LobbyScreen
 import com.astran.russianspy.ui.MainMenuScreen
 import com.astran.russianspy.ui.PublicLobbiesScreen
+import com.astran.russianspy.ui.RoleRevealScreen
 import com.astran.russianspy.ui.SettingsScreen
 import com.astran.russianspy.ui.SurveillanceMonitorsScreen
 import com.astran.russianspy.ui.WaitingRoomScreen
@@ -133,7 +134,7 @@ fun RussianSpyNavGraph() {
                 WaitingRoomScreen(
                     viewModel = gameViewModel,
                     onGameStarted = {
-                        navController.navigate(Routes.GAME_MAP) {
+                        navController.navigate(Routes.ROLE_REVEAL) {
                             popUpTo(Routes.MAIN_MENU) { inclusive = false }
                         }
                     },
@@ -188,7 +189,26 @@ fun RussianSpyNavGraph() {
             }
 
             composable(Routes.ROLE_REVEAL) {
-                PlaceholderScreen(name = "Alocare rol")
+                val myRole = gameViewModel.myRole.value
+                if (myRole == null) {
+                    // Caz defensiv (nu ar trebui sa se intample): daca rolul nu a
+                    // ajuns inca, sarim direct la harta ca sa nu blocam jucatorul
+                    // pe un ecran gol.
+                    LaunchedEffect(Unit) {
+                        navController.navigate(Routes.GAME_MAP) {
+                            popUpTo(Routes.MAIN_MENU) { inclusive = false }
+                        }
+                    }
+                } else {
+                    RoleRevealScreen(
+                        role = myRole,
+                        onContinue = {
+                            navController.navigate(Routes.GAME_MAP) {
+                                popUpTo(Routes.MAIN_MENU) { inclusive = false }
+                            }
+                        }
+                    )
+                }
             }
 
             composable(Routes.SURVEILLANCE_TASK) {
