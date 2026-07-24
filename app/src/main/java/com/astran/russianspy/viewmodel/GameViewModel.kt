@@ -18,6 +18,7 @@ import com.astran.russianspy.network.LobbyPlayerInfo
 import com.astran.russianspy.network.NetworkClient
 import com.astran.russianspy.network.PlayerPositionInfo
 import com.astran.russianspy.network.ServerEvent
+import com.astran.russianspy.network.SpyTaskInfo
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -113,6 +114,43 @@ class GameViewModel : ViewModel() {
         }
     }
 
+    // Cate task-uri va primi spionul in urmatoarea runda (setare de host, in LOBBY,
+    // 2-12). Implicit 5. Actualizata local optimist si confirmata de server prin
+    // spy_task_count_changed (care se trimite catre toata camera, ca toti sa vada
+    // aceeasi valoare in ecranul de setari).
+    private val _spyTaskCount = mutableStateOf(5)
+    val spyTaskCount: State<Int> = _spyTaskCount
+
+    fun setSpyTaskCount(count: Int) {
+        networkClient?.sendSetSpyTaskCount(count)
+    }
+
+    // Task-urile alocate SPIONULUI in runda curenta - gol daca esti agent FBI (nu
+    // primesti niciodata acest eveniment) sau daca jocul nu a inceput inca.
+    val spyTasks = mutableStateListOf<SpyTaskInfo>()
+
+    /** True doar pentru spion, cand a completat/reactivat TOATE task-urile alocate. */
+    val allSpyTasksCompleted: Boolean
+        get() = spyTasks.isNotEmpty() && spyTasks.all { it.isCompleted }
+
+    fun completeSpyTask(taskId: String) {
+        networkClient?.sendCompleteSpyTask(taskId)
+    }
+
+    fun disableSpyDevice(taskId: String) {
+        networkClient?.sendDisableSpyDevice(taskId)
+    }
+
+    // Devine "RUSSIAN_SPY" sau "FBI_AGENT" cand jocul s-a incheiat (victorie automata
+    // a spionului prin task-uri, sau alt mod de final adaugat ulterior). Ecranul curent
+    // observa asta si navigheaza spre un ecran de final de joc.
+    private val _gameOverWinner = mutableStateOf<String?>(null)
+    val gameOverWinner: State<String?> = _gameOverWinner
+
+    fun acknowledgeGameOver() {
+        _gameOverWinner.value = null
+    }
+
     // Devine "KICKED" sau "BANNED" cand serverul ne anunta ca hostul ne-a scos din
     // camera curenta - WaitingRoomScreen observa asta si navigheaza inapoi la meniu,
     // afisand mesajul potrivit. null inseamna "nimic de aratat".
@@ -140,9 +178,12 @@ class GameViewModel : ViewModel() {
         _currentRoomId.value = "entrance"
         _removalReason.value = null
         _roomIsPrivate.value = false
+        _spyTaskCount.value = 5
+        _gameOverWinner.value = null
 
         lobbyPlayers.clear()
         playerNames.clear()
+        spyTasks.clear()
     }
 
     /**
@@ -164,11 +205,14 @@ class GameViewModel : ViewModel() {
         _currentRoomId.value = "entrance"
         _localPlayerX.value = BuildingLayout.START_X
         _localPlayerY.value = BuildingLayout.START_Y
+        _spyTaskCount.value = 5
+        _gameOverWinner.value = null
 
         lobbyPlayers.clear()
         playerLivePositions.clear()
         playerNames.clear()
         surveillanceCameraSpots.clear()
+        spyTasks.clear()
     }
 
     private val _localPlayerId = mutableStateOf("")
@@ -349,6 +393,30 @@ class GameViewModel : ViewModel() {
                 // pe conexiunea globala /ws/account/{account_id}, gestionata de
                 // AccountSocketManager) - ramas doar ca ramura goala, ca "when" sa
                 // fie exhaustiv fata de sealed class-ul ServerEvent.
+            }
+            is ServerEvent.SpyTasksAssigned -> {
+                // Ajunge STRICT la spion (serverul nu trimite acest eveniment
+                // agentilor FBI) - populam lista completa de task-uri ale rundei.
+                spyTasks.clear()
+                spyTasks.addAll(event.tasks)
+            }
+            is ServerEvent.SpyTaskCountChanged -> {
+                _spyTaskCount.value = event.count
+            }
+            is ServerEvent.SpyTaskUpdated -> {
+                val index = spyTasks.indexOfFirst { it.id == event.taskId }
+                if (index >= 0) {
+                    spyTasks[index] = spyTasks[index].copy(isCompleted = event.isCompleted)
+                }
+            }
+            is ServerEvent.SpyTaskWitnessed -> {
+                // Task-ul a esuat pentru ca un agent FBI era in aceeasi camera -
+                // aratam acelasi tip de alerta ca la trimiterea de intel, ca sa
+                // stie spionul ca a fost vazut si sa nu mai incerce imediat.
+                _errorMessage.value = "Ai fost vazut! Task-ul a esuat."
+            }
+            is ServerEvent.GameOver -> {
+                _gameOverWinner.value = event.winner
             }
             is ServerEvent.LobbyUpdate -> {
                 lobbyPlayers.clear()
