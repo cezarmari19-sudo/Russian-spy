@@ -25,8 +25,21 @@ sealed class ServerEvent {
     object YouWereKicked : ServerEvent()
     object YouWereBanned : ServerEvent()
     data class FriendRoomInvite(val fromDisplayName: String, val fromFriendCode: String, val roomCode: String) : ServerEvent()
+    data class SpyTasksAssigned(val tasks: List<SpyTaskInfo>) : ServerEvent()
+    data class SpyTaskCountChanged(val count: Int) : ServerEvent()
+    data class SpyTaskUpdated(val taskId: String, val isCompleted: Boolean) : ServerEvent()
+    data class SpyTaskWitnessed(val taskId: String) : ServerEvent()
+    data class GameOver(val winner: String) : ServerEvent()
     data class Error(val message: String) : ServerEvent()
 }
+
+/** Un task alocat spionului: tip, camera unde trebuie facut, si daca e completat acum. */
+data class SpyTaskInfo(
+    val id: String,
+    val taskType: String,
+    val roomId: String,
+    val isCompleted: Boolean
+)
 
 data class LobbyPlayerInfo(
     val id: String,
@@ -259,6 +272,34 @@ class NetworkClient(
                     roomCode = json.getString("roomCode")
                 )
             )
+            "spy_tasks_assigned" -> {
+                val arr = json.getJSONArray("tasks")
+                val list = (0 until arr.length()).map { i ->
+                    val entry = arr.getJSONObject(i)
+                    SpyTaskInfo(
+                        id = entry.getString("id"),
+                        taskType = entry.getString("taskType"),
+                        roomId = entry.getString("roomId"),
+                        isCompleted = entry.optBoolean("isCompleted", false)
+                    )
+                }
+                onEvent(ServerEvent.SpyTasksAssigned(list))
+            }
+            "spy_task_count_changed" -> onEvent(
+                ServerEvent.SpyTaskCountChanged(count = json.getInt("count"))
+            )
+            "spy_task_updated" -> onEvent(
+                ServerEvent.SpyTaskUpdated(
+                    taskId = json.getString("taskId"),
+                    isCompleted = json.getBoolean("isCompleted")
+                )
+            )
+            "spy_task_witnessed" -> onEvent(
+                ServerEvent.SpyTaskWitnessed(taskId = json.getString("taskId"))
+            )
+            "game_over" -> onEvent(
+                ServerEvent.GameOver(winner = json.optString("winner", ""))
+            )
         }
     }
 
@@ -306,6 +347,30 @@ class NetworkClient(
         send(JSONObject().apply {
             put("action", "ban_player")
             put("targetPlayerId", targetPlayerId)
+        })
+    }
+
+    /** Doar host-ul poate seta acest numar, si doar in LOBBY (verificat pe server). */
+    fun sendSetSpyTaskCount(count: Int) {
+        send(JSONObject().apply {
+            put("action", "set_spy_task_count")
+            put("count", count)
+        })
+    }
+
+    /** Apelat de client dupa ce hold-ul de durata corecta s-a terminat, pentru un task de spion. */
+    fun sendCompleteSpyTask(taskId: String) {
+        send(JSONObject().apply {
+            put("action", "complete_spy_task")
+            put("taskId", taskId)
+        })
+    }
+
+    /** Apelat de un agent FBI care a gasit un dispozitiv plasat de spion si il dezactiveaza. */
+    fun sendDisableSpyDevice(taskId: String) {
+        send(JSONObject().apply {
+            put("action", "disable_spy_device")
+            put("taskId", taskId)
         })
     }
 
