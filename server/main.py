@@ -4,6 +4,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from game_manager import game_manager, MAX_PLAYERS
+from models import GamePhase
 from accounts import account_manager
 
 app = FastAPI()
@@ -167,6 +168,14 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                                 "type": "game_started",
                                 "yourRole": player.role.value
                             }))
+                            # Task-urile de spion se trimit DOAR spionului - un agent
+                            # FBI nu trebuie sa stie ca exista task-uri alocate cuiva,
+                            # altfel ar deduce imediat cine e spionul.
+                            if player.role.value == "RUSSIAN_SPY":
+                                await ws.send_text(json.dumps({
+                                    "type": "spy_tasks_assigned",
+                                    "tasks": [t.to_dict() for t in room.spy_tasks]
+                                }))
                     # Camerele de supraveghere ale rundei (aceleasi pentru toti jucatorii),
                     # trimise imediat dupa game_started catre toata camera.
                     await broadcast_to_room(room_code, {
@@ -199,6 +208,63 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         last_positions.get(room_code, {}).pop(target_player_id, None)
 
                     await broadcast_lobby_update(room_code)
+
+            elif action == "set_spy_task_count":
+                count = data.get("count", 5)
+                error = game_manager.set_spy_task_count(room_code, player_id, count)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    await broadcast_to_room(room_code, {
+                        "type": "spy_task_count_changed",
+                        "count": count
+                    })
+
+            elif action == "complete_spy_task" or action == "disable_spy_device":
+                task_id = data.get("taskId", "")
+                room = game_manager.get_room(room_code)
+
+                # Verificare de RISC: daca exista un agent FBI CONECTAT in aceeasi
+                # camera cu jucatorul care incearca task-ul chiar acum, actiunea
+                # esueaza (spionul a fost vazut) si generam un eveniment de
+                # supraveghere vizibil, la fel ca la trimiterea de intel.
+                witnessed = False
+                if room and action == "complete_spy_task":
+                    acting_player = room.players.get(player_id)
+                    if acting_player:
+                        witnessed = any(
+                            p.role.value == "FBI_AGENT" and p.connected
+                            and p.current_room_id == acting_player.current_room_id
+                            for p in room.players.values()
+                        )
+
+                if witnessed:
+                    await websocket.send_text(json.dumps({
+                        "type": "spy_task_witnessed",
+                        "taskId": task_id
+                    }))
+                    await broadcast_to_room(room_code, {
+                        "type": "surveillance_event",
+                        "eventType": "SPY_SENDING_INTEL",
+                        "fromRoomId": room.players[player_id].current_room_id
+                    }, exclude_player_id=player_id)
+                else:
+                    if action == "complete_spy_task":
+                        error = game_manager.complete_spy_task(room_code, player_id, task_id)
+                    else:
+                        error = game_manager.disable_spy_device(room_code, player_id, task_id)
+
+                    if error:
+                        await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                    else:
+                        await broadcast_to_room(room_code, {
+                            "type": "spy_task_updated",
+                            "taskId": task_id,
+                            "isCompleted": action == "complete_spy_task"
+                        })
+                        if action == "complete_spy_task" and game_manager.check_spy_win(room_code):
+                            room.phase = GamePhase.SPY_WON
+                            await broadcast_to_room(room_code, {"type": "game_over", "winner": "RUSSIAN_SPY"})
 
             elif action == "delete_room":
                 error = game_manager.delete_room(room_code, player_id)
