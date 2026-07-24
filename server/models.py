@@ -27,6 +27,68 @@ class GamePhase(str, Enum):
     FBI_WON = "FBI_WON"
 
 
+class SpyTaskType(str, Enum):
+    """Catalogul COMPLET de task-uri posibile pentru spion. La inceputul fiecarei
+    runde, serverul alege random N dintre acestea (N = setarea hostului), nu se
+    folosesc toate deodata. Fiecare are o durata (RAPID/MEDIU/LUNG, ca la Among
+    Us) si o lista de camere in care poate aparea."""
+    PHOTOGRAPH_DOCUMENTS = "PHOTOGRAPH_DOCUMENTS"       # rapid - fotografiaza documente
+    STEAL_KEYS = "STEAL_KEYS"                           # rapid - fura chei
+    PLANT_LISTENING_DEVICE = "PLANT_LISTENING_DEVICE"   # mediu - plaseaza dispozitiv de ascultare
+    HACK_SURVEILLANCE_CAMERA = "HACK_SURVEILLANCE_CAMERA"  # lung - instaleaza sistem de spionat pe camera
+    SEND_ENCRYPTED_MESSAGE = "SEND_ENCRYPTED_MESSAGE"   # mediu - trimite mesaj cifrat
+    ERASE_FORENSIC_EVIDENCE = "ERASE_FORENSIC_EVIDENCE"  # lung - sterge probe criminalistice
+
+
+# Durata (in secunde) de "hold" necesara pentru fiecare tip de task - folosita de
+# client ca sa stie cat sa tina apasat, si de server ca sa valideze ca nu s-a
+# trisat (nu se marcheaza complet mai devreme decat durata minima).
+SPY_TASK_DURATIONS_SECONDS: dict[str, float] = {
+    SpyTaskType.PHOTOGRAPH_DOCUMENTS.value: 3.0,
+    SpyTaskType.STEAL_KEYS.value: 2.0,
+    SpyTaskType.PLANT_LISTENING_DEVICE.value: 6.0,
+    SpyTaskType.HACK_SURVEILLANCE_CAMERA.value: 10.0,
+    SpyTaskType.SEND_ENCRYPTED_MESSAGE.value: 5.0,
+    SpyTaskType.ERASE_FORENSIC_EVIDENCE.value: 8.0,
+}
+
+# In ce camere (dupa RoomFunction) poate aparea fiecare tip de task. HACK_SURVEILLANCE_CAMERA
+# e special - camerele valide pentru el se calculeaza dinamic (doar unde exista o
+# camera de supraveghere activa in runda asta), nu dupa RoomFunction.
+SPY_TASK_ALLOWED_FUNCTIONS: dict[str, list] = {
+    SpyTaskType.PHOTOGRAPH_DOCUMENTS.value: [RoomFunction.OFFICE, RoomFunction.FORENSICS_LAB],
+    SpyTaskType.STEAL_KEYS.value: [RoomFunction.OFFICE, RoomFunction.ARMORY],
+    SpyTaskType.PLANT_LISTENING_DEVICE.value: [
+        RoomFunction.OFFICE, RoomFunction.BREAK_ROOM, RoomFunction.ARMORY,
+        RoomFunction.SERVER_ROOM, RoomFunction.COMMS_MONITOR, RoomFunction.FORENSICS_LAB,
+    ],
+    SpyTaskType.SEND_ENCRYPTED_MESSAGE.value: [RoomFunction.SERVER_ROOM, RoomFunction.COMMS_MONITOR],
+    SpyTaskType.ERASE_FORENSIC_EVIDENCE.value: [RoomFunction.FORENSICS_LAB],
+}
+
+
+@dataclass
+class SpyTaskInstance:
+    """O instanta CONCRETA a unui task, alocata spionului pentru runda curenta:
+    tipul, camera in care trebuie facut, si daca a fost completat. Pentru
+    PLANT_LISTENING_DEVICE si HACK_SURVEILLANCE_CAMERA, obiectul plasat ramane
+    vizibil/interactiv pe harta dupa completare - un agent FBI il poate gasi si
+    "dezactiva" (aceeasi mecanica de hold), ceea ce reseteaza is_completed la
+    False si spionul trebuie sa il refaca."""
+    id: str
+    task_type: str
+    room_id: str
+    is_completed: bool = False
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "taskType": self.task_type,
+            "roomId": self.room_id,
+            "isCompleted": self.is_completed,
+        }
+
+
 @dataclass
 class Player:
     id: str
@@ -136,6 +198,12 @@ class GameRoom:
     # generat nou la fiecare creare/alaturare de camera si ar face banul inutil -
     # jucatorul dat afara s-ar putea reconecta instant cu alt playerId).
     banned_account_ids: set[str] = field(default_factory=set)
+    # Cate task-uri de spion sunt alese pentru fiecare runda - configurabil de
+    # host din setarile camerei, INAINTE ca jocul sa inceapa (2-12). Implicit 5.
+    spy_task_count: int = 5
+    # Task-urile CONCRETE alocate spionului in runda curenta (subset random din
+    # SpyTaskType, generat la start_game()). Gol in LOBBY.
+    spy_tasks: list = field(default_factory=list)
 
     def alive_fbi_agents(self) -> list[Player]:
         return [p for p in self.players.values() if p.is_alive and p.role == Role.FBI_AGENT]
