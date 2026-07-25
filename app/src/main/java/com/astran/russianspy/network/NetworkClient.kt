@@ -33,11 +33,13 @@ sealed class ServerEvent {
     data class Error(val message: String) : ServerEvent()
 }
 
-/** Un task alocat spionului: tip, camera unde trebuie facut, si daca e completat acum. */
+/** Un task alocat spionului: tip, camera + punct exact x/y unde trebuie facut, si daca e completat acum. */
 data class SpyTaskInfo(
     val id: String,
     val taskType: String,
     val roomId: String,
+    val x: Float,
+    val y: Float,
     val isCompleted: Boolean
 )
 
@@ -280,6 +282,8 @@ class NetworkClient(
                         id = entry.getString("id"),
                         taskType = entry.getString("taskType"),
                         roomId = entry.getString("roomId"),
+                        x = entry.getDouble("x").toFloat(),
+                        y = entry.getDouble("y").toFloat(),
                         isCompleted = entry.optBoolean("isCompleted", false)
                     )
                 }
