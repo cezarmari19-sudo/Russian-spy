@@ -70,14 +70,19 @@ SPY_TASK_ALLOWED_FUNCTIONS: dict[str, list] = {
 @dataclass
 class SpyTaskInstance:
     """O instanta CONCRETA a unui task, alocata spionului pentru runda curenta:
-    tipul, camera in care trebuie facut, si daca a fost completat. Pentru
-    PLANT_LISTENING_DEVICE si HACK_SURVEILLANCE_CAMERA, obiectul plasat ramane
-    vizibil/interactiv pe harta dupa completare - un agent FBI il poate gasi si
-    "dezactiva" (aceeasi mecanica de hold), ceea ce reseteaza is_completed la
-    False si spionul trebuie sa il refaca."""
+    tipul, camera SI punctul exact x/y din interiorul ei (ca la camerele de
+    supraveghere - jucatorul trebuie sa fie fizic langa acel punct, nu doar in
+    aceeasi camera, ca sa poata interactiona). Asta permite si mai multe
+    task-uri diferite in aceeasi camera, fiecare cu propriul punct, fara sa se
+    suprapuna. Pentru PLANT_LISTENING_DEVICE si HACK_SURVEILLANCE_CAMERA,
+    obiectul plasat ramane vizibil/interactiv pe harta dupa completare - un
+    agent FBI il poate gasi si "dezactiva" (aceeasi mecanica de hold), ceea ce
+    reseteaza is_completed la False si spionul trebuie sa il refaca."""
     id: str
     task_type: str
     room_id: str
+    x: float
+    y: float
     is_completed: bool = False
 
     def to_dict(self):
@@ -85,6 +90,8 @@ class SpyTaskInstance:
             "id": self.id,
             "taskType": self.task_type,
             "roomId": self.room_id,
+            "x": self.x,
+            "y": self.y,
             "isCompleted": self.is_completed,
         }
 
