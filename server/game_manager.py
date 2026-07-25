@@ -229,12 +229,22 @@ class GameManager:
         """Alege random `room.spy_task_count` task-uri din catalogul complet
         SpyTaskType, fiecare cu o camera valida random (pentru HACK_SURVEILLANCE_CAMERA,
         doar camerele care au chiar o camera de supraveghere activa in aceasta
-        runda). Daca un tip de task nu are nicio camera valida disponibila (caz
-        rar), e sarit si se alege alt tip in locul lui."""
+        runda) SI un punct exact x/y in interiorul acelei camere - la fel ca la
+        camerele de supraveghere, jucatorul trebuie sa fie fizic langa acel
+        punct ca sa poata interactiona. Daca doua task-uri ajung in aceeasi
+        camera, punctele lor sunt distantate (impartim camera in sub-zone),
+        ca sa nu se suprapuna vizual/functional. Daca un tip de task nu are
+        nicio camera valida disponibila (caz rar), e sarit si se alege alt tip.
+        """
         all_task_types = list(SpyTaskType)
         random.shuffle(all_task_types)
 
         surveillance_room_ids = [cam["roomId"] for cam in room.surveillance_cameras]
+        rooms_by_id = {r.id: r for r in BUILDING_LAYOUT}
+
+        # Cate task-uri au fost deja plasate in fiecare camera, ca sa distantam
+        # punctele urmatoarelor task-uri din aceeasi camera (nu suprapunem).
+        tasks_per_room: dict[str, int] = {}
 
         tasks: list[SpyTaskInstance] = []
         type_index = 0
@@ -255,10 +265,29 @@ class GameManager:
                 continue
 
             chosen_room_id = random.choice(valid_room_ids)
+            chosen_room = rooms_by_id[chosen_room_id]
+
+            # Distantam punctul in functie de cate task-uri sunt deja in camera
+            # asta (impartim latimea camerei in benzi verticale) - simplu, dar
+            # suficient ca sa nu apara doua task-uri exact pe aceeasi pozitie.
+            existing_count = tasks_per_room.get(chosen_room_id, 0)
+            band_count = existing_count + 1
+            margin_x = chosen_room.width * 0.15
+            margin_y = chosen_room.height * 0.15
+            usable_width = chosen_room.width - margin_x * 2
+            band_width = usable_width / max(band_count, 1)
+            band_start = chosen_room.x + margin_x + band_width * existing_count
+            spot_x = band_start + random.random() * band_width
+            spot_y = chosen_room.y + margin_y + random.random() * (chosen_room.height - margin_y * 2)
+
+            tasks_per_room[chosen_room_id] = existing_count + 1
+
             tasks.append(SpyTaskInstance(
                 id=f"task_{len(tasks)}_{random.randint(1000, 9999)}",
                 task_type=task_type.value,
                 room_id=chosen_room_id,
+                x=spot_x,
+                y=spot_y,
             ))
 
         return tasks
