@@ -19,6 +19,7 @@ import com.astran.russianspy.network.NetworkClient
 import com.astran.russianspy.network.PlayerPositionInfo
 import com.astran.russianspy.network.ServerEvent
 import com.astran.russianspy.network.SpyTaskInfo
+import com.astran.russianspy.network.CorpseInfo
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -141,6 +142,22 @@ class GameViewModel : ViewModel() {
         networkClient?.sendDisableSpyDevice(taskId)
     }
 
+    // Corpurile aparute pe harta in runda curenta - vizibile pentru TOTI
+    // jucatorii (spion si FBI deopotriva), populate prin evenimentul
+    // "corpse_found" trimis de server la fiecare omor reusit.
+    val corpses = mutableStateListOf<CorpseInfo>()
+
+    // Devine true DOAR pe clientul victimei, cand serverul confirma ca a fost
+    // ucisa ("you_were_killed") - GameCanvasScreen trebuie sa observe asta si
+    // sa treaca jucatorul in mod spectator (fara miscare/interactiune).
+    private val _isDead = mutableStateOf(false)
+    val isDead: State<Boolean> = _isDead
+
+    /** Apelat de spion cand incearca sa omoare un agent FBI din aceeasi camera. */
+    fun killPlayer(targetPlayerId: String) {
+        networkClient?.sendKillPlayer(targetPlayerId)
+    }
+
     // Devine "RUSSIAN_SPY" sau "FBI_AGENT" cand jocul s-a incheiat (victorie automata
     // a spionului prin task-uri, sau alt mod de final adaugat ulterior). Ecranul curent
     // observa asta si navigheaza spre un ecran de final de joc.
@@ -184,6 +201,8 @@ class GameViewModel : ViewModel() {
         lobbyPlayers.clear()
         playerNames.clear()
         spyTasks.clear()
+        corpses.clear()
+        _isDead.value = false
     }
 
     /**
@@ -213,6 +232,8 @@ class GameViewModel : ViewModel() {
         playerNames.clear()
         surveillanceCameraSpots.clear()
         spyTasks.clear()
+        corpses.clear()
+        _isDead.value = false
     }
 
     private val _localPlayerId = mutableStateOf("")
@@ -417,6 +438,19 @@ class GameViewModel : ViewModel() {
             }
             is ServerEvent.GameOver -> {
                 _gameOverWinner.value = event.winner
+            }
+            is ServerEvent.CorpseFound -> {
+                // Inlocuim intrarea daca exista deja (ex: dupa raport, cand
+                // "reported" se schimba), altfel o adaugam noua.
+                val index = corpses.indexOfFirst { it.id == event.corpse.id }
+                if (index >= 0) {
+                    corpses[index] = event.corpse
+                } else {
+                    corpses.add(event.corpse)
+                }
+            }
+            is ServerEvent.YouWereKilled -> {
+                _isDead.value = true
             }
             is ServerEvent.LobbyUpdate -> {
                 lobbyPlayers.clear()
