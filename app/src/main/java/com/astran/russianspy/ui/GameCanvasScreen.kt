@@ -33,6 +33,7 @@ import com.astran.russianspy.model.Room
 import com.astran.russianspy.model.RoomFunction
 import com.astran.russianspy.model.SpyTaskCatalog
 import com.astran.russianspy.network.SpyTaskInfo
+import com.astran.russianspy.network.CorpseInfo
 import com.astran.russianspy.ui.tasks.HoldToCompleteTaskDialog
 import com.astran.russianspy.viewmodel.GameViewModel
 import kotlin.math.cos
@@ -46,6 +47,9 @@ private const val JOYSTICK_KNOB_RADIUS = 40f
 // Aceeasi raza ca la monitorul de supraveghere - jucatorul trebuie sa fie fizic
 // langa punctul exact al task-ului/dispozitivului, nu doar in aceeasi camera.
 private const val TASK_INTERACT_RADIUS = BuildingLayout.MONITOR_INTERACT_RADIUS
+// Raza in care spionul poate omori un agent FBI - identica cu raza de
+// interactiune a task-urilor, ca sa fie consistenta cu restul jocului.
+private const val KILL_INTERACT_RADIUS = BuildingLayout.MONITOR_INTERACT_RADIUS
 
 @Composable
 fun GameCanvasScreen(
@@ -82,12 +86,17 @@ fun GameCanvasScreen(
     var activeTaskIsDisableAction by remember { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
     var showMiniMap by remember { mutableStateOf(false) }
+    // Cooldown LOCAL, doar pentru feedback vizual instant pe buton - validarea
+    // reala (daca a trecut suficient timp) se face intotdeauna pe server:
+    // daca acesta refuza (prea devreme), afisam eroarea primita, nu ne bazam
+    // exclusiv pe acest cronometru local.
+    var killCooldownUntilMillis by remember { mutableStateOf(0L) }
 
     LaunchedEffect(Unit) {
         var frameCounter = 0
         while (true) {
             withFrameNanos { }
-            if (joystickDirX != 0f || joystickDirY != 0f) {
+            if (!viewModel.isDead.value && (joystickDirX != 0f || joystickDirY != 0f)) {
                 val newX = playerX + joystickDirX * playerSpeed
                 val newY = playerY + joystickDirY * playerSpeed
                 if (isWalkable(newX, playerY, playerRadius)) playerX = newX
@@ -127,6 +136,7 @@ fun GameCanvasScreen(
                     },
                     onDrag = { change, _ ->
                         change.consume()
+                        if (viewModel.isDead.value) return@detectDragGestures
                         val origin = joystickOrigin ?: return@detectDragGestures
                         val rawOffset = change.position - origin
                         val distance = sqrt(rawOffset.x * rawOffset.x + rawOffset.y * rawOffset.y)
@@ -282,6 +292,42 @@ fun GameCanvasScreen(
                 }
             }
 
+            // Corpurile gasite in runda curenta - vizibile pentru TOTI jucatorii
+            // (spion si FBI), dar tot supuse fog-of-war-ului (nu se vad prin
+            // pereti), la fel ca jucatorii vii.
+            clipPath(visibilityPathScreen) {
+                viewModel.corpses.forEach { corpse ->
+                    if (corpse.reported) return@forEach
+                    val isVisible = isPointVisibleFromPoint(
+                        corpse.x, corpse.y, playerX, playerY, wallSegments, VIEW_RADIUS
+                    )
+                    if (!isVisible) return@forEach
+
+                    val screenPos = worldToScreen(corpse.x, corpse.y)
+                    drawCircle(
+                        color = Color(0xFF7A0000),
+                        radius = playerRadius * TILE_SCALE * 1.15f,
+                        center = screenPos
+                    )
+                    drawCircle(
+                        color = Color(0xFFB3261E),
+                        radius = playerRadius * TILE_SCALE * 0.7f,
+                        center = screenPos
+                    )
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "☠",
+                        screenPos.x,
+                        screenPos.y + 10f,
+                        android.graphics.Paint().apply {
+                            color = android.graphics.Color.WHITE
+                            textSize = 26f
+                            textAlign = android.graphics.Paint.Align.CENTER
+                            isAntiAlias = true
+                        }
+                    )
+                }
+            }
+
             drawCircle(
                 color = Color(0xFFFFD700),
                 radius = playerRadius * TILE_SCALE,
@@ -387,13 +433,60 @@ fun GameCanvasScreen(
             }
         }
 
+        // Butonul de omor - vizibil DOAR spionului, DOAR cand exact un singur
+        // agent FBI viu e in raza de interactiune SI nimeni altcineva viu nu e
+        // in aceeasi camera (fara martori) - server-side se revalideaza totul,
+        // dar verificam si local ca butonul sa nu apara inutil/inselator.
+        val myRole = viewModel.myRole.value
+        if (myRole == Role.RUSSIAN_SPY) {
+            val myRoomId = currentRoomIdLocal
+            val playersInRoom = viewModel.playerLivePositions.entries.filter { (pid, pos) ->
+                pid != viewModel.localPlayerId.value && pos.roomId == myRoomId
+            }
+            val fbiTargetsNearby = playersInRoom.filter { (_, pos) ->
+                kotlin.math.hypot(playerX - pos.x, playerY - pos.y) <= KILL_INTERACT_RADIUS
+            }
+            val hasWitnesses = playersInRoom.size > fbiTargetsNearby.size ||
+                fbiTargetsNearby.size > 1
+            val killTarget = fbiTargetsNearby.firstOrNull()?.key
+
+            val nowMillis = System.currentTimeMillis()
+            val onCooldown = nowMillis < killCooldownUntilMillis
+
+            if (killTarget != null && !hasWitnesses && activeTaskDialog == null) {
+                Button(
+                    onClick = {
+                        if (!onCooldown) {
+                            viewModel.killPlayer(killTarget)
+                            // Cooldown local de aceeasi durata cu cea implicita de pe
+                            // server (30s) - doar vizual, serverul e sursa de adevar.
+                            killCooldownUntilMillis = nowMillis + 30_000L
+                        }
+                    },
+                    enabled = !onCooldown,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7A0000)),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(24.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                ) {
+                    Text(
+                        if (onCooldown) {
+                            "🔪 Asteapta ${((killCooldownUntilMillis - nowMillis) / 1000L + 1).coerceAtLeast(0)}s"
+                        } else {
+                            "🔪 Omoara"
+                        }
+                    )
+                }
+            }
+        }
+
         // Task de spion / dispozitiv suspect din apropiere - EXACT aceeasi logica
         // de proximitate ca la monitorul de supraveghere (jucatorul trebuie sa
         // fie fizic langa punctul x/y al task-ului, nu doar in aceeasi camera).
         // Un spion vede DOAR task-urile lui neterminate; un agent FBI vede DOAR
         // dispozitivele deja plasate (PLANT_LISTENING_DEVICE / HACK_SURVEILLANCE_CAMERA
         // completate) - task-urile spionului raman complet invizibile agentilor.
-        val myRole = viewModel.myRole.value
         val nearbyTask: SpyTaskInfo? = viewModel.spyTasks.firstOrNull { task ->
             val dist = kotlin.math.hypot(playerX - task.x, playerY - task.y)
             if (dist > TASK_INTERACT_RADIUS) return@firstOrNull false
@@ -446,6 +539,35 @@ fun GameCanvasScreen(
                 },
                 onCancel = { activeTaskDialog = null }
             )
+        }
+
+        // Ecran de spectator - afisat DOAR pe clientul victimei, dupa "you_were_killed".
+        // Miscarea si joystick-ul sunt deja blocate mai sus; aici doar semnalam
+        // clar starea, fara sa ascundem harta (jucatorul mort poate tot urmari
+        // ce se intampla, doar nu mai poate actiona).
+        if (viewModel.isDead.value) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0x99000000)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("☠", fontSize = 48.sp, color = Color.White)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Ai fost eliminat",
+                        color = Color.White,
+                        fontSize = 20.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Poti urmari restul partidei, dar nu te mai poti misca.",
+                        color = Color.White.copy(alpha = 0.75f),
+                        fontSize = 13.sp
+                    )
+                }
+            }
         }
     }
 }
