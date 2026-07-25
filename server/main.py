@@ -266,6 +266,34 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                             room.phase = GamePhase.SPY_WON
                             await broadcast_to_room(room_code, {"type": "game_over", "winner": "RUSSIAN_SPY"})
 
+            elif action == "kill_player":
+                target_player_id = data.get("targetPlayerId", "")
+                victim_pos = last_positions.get(room_code, {}).get(target_player_id, {})
+                victim_x = victim_pos.get("x", 0.0)
+                victim_y = victim_pos.get("y", 0.0)
+
+                error, corpse = game_manager.kill_player(
+                    room_code, player_id, target_player_id, victim_x, victim_y
+                )
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    # Victima primeste un mesaj separat, clar, ca sa stie ca a
+                    # murit (trece in mod spectator pe client) - restul camerei
+                    # primeste doar corpul aparut pe harta, fara sa afle cine e
+                    # ucigasul (killerId ramane ascuns pana la raport/analiza).
+                    victim_ws = active_connections.get(room_code, {}).get(target_player_id)
+                    if victim_ws is not None:
+                        try:
+                            await victim_ws.send_text(json.dumps({"type": "you_were_killed"}))
+                        except Exception:
+                            pass
+
+                    await broadcast_to_room(room_code, {
+                        "type": "corpse_found",
+                        "corpse": corpse.to_dict(reveal_killer=False)
+                    })
+
             elif action == "delete_room":
                 error = game_manager.delete_room(room_code, player_id)
                 if error:
