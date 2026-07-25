@@ -171,6 +171,40 @@ class DnaSample:
 
 
 @dataclass
+class Corpse:
+    """Corpul unui agent FBI omorat de spion. Ramane pe harta, vizibil pentru
+    TOTI jucatorii (spion si FBI), pana e raportat. Continutul real de ADN
+    (dna_completeness) e ascuns clientilor pana cineva face minigame-ul de
+    recoltare la fata locului - inainte de asta, clientii stiu doar CA exista
+    un corp acolo, nu cat ADN se poate recolta de pe el."""
+    id: str
+    victim_id: str
+    killer_id: str  # nu se trimite niciodata catre clienti inainte de raport
+    room_id: str
+    x: float
+    y: float
+    # Cat de complet e ADN-ul ramas pe corp (10-100). Random 70-100 daca
+    # ucigasul nu purta manusi; redus drastic (~10) daca purta manusi -
+    # calculat o singura data, la momentul omorului.
+    dna_completeness: int = 0
+    dna_recovered: bool = False
+    reported: bool = False
+    reported_by: Optional[str] = None
+
+    def to_dict(self, reveal_killer: bool = False):
+        return {
+            "id": self.id,
+            "victimId": self.victim_id,
+            "killerId": self.killer_id if reveal_killer else None,
+            "roomId": self.room_id,
+            "x": self.x,
+            "y": self.y,
+            "dnaRecovered": self.dna_recovered,
+            "reported": self.reported,
+        }
+
+
+@dataclass
 class IntelMessage:
     id: str
     sender_id: str
@@ -189,6 +223,16 @@ class GameRoom:
     players: dict[str, Player] = field(default_factory=dict)
     dna_samples: dict[str, DnaSample] = field(default_factory=dict)
     intel_messages: list[IntelMessage] = field(default_factory=list)
+    # Corpurile create in runda curenta (id -> Corpse). Raman in aceasta lista
+    # chiar si dupa raportare - un corp raportat nu mai apare pe harta, dar e
+    # pastrat pentru istoricul rundei.
+    corpses: dict[str, Corpse] = field(default_factory=dict)
+    # Cate secunde trebuie sa treaca intre doua omoruri consecutive ale
+    # spionului - configurabil de host, la fel ca spy_task_count. Implicit 30s.
+    kill_cooldown_seconds: float = 30.0
+    # Momentul (epoch seconds) ultimului omor reusit - folosit ca sa calculam
+    # daca a trecut cooldown-ul. 0 inseamna "niciun omor inca in aceasta runda".
+    last_kill_at_millis: float = 0.0
     bomb_planted: bool = False
     bomb_armed_at_millis: int = 0
     created_at: float = field(default_factory=time.time)
@@ -208,25 +252,4 @@ class GameRoom:
     # Cate task-uri de spion sunt alese pentru fiecare runda - configurabil de
     # host din setarile camerei, INAINTE ca jocul sa inceapa (2-12). Implicit 5.
     spy_task_count: int = 5
-    # Task-urile CONCRETE alocate spionului in runda curenta (subset random din
-    # SpyTaskType, generat la start_game()). Gol in LOBBY.
-    spy_tasks: list = field(default_factory=list)
-
-    def alive_fbi_agents(self) -> list[Player]:
-        return [p for p in self.players.values() if p.is_alive and p.role == Role.FBI_AGENT]
-
-    def spy(self) -> Optional[Player]:
-        for p in self.players.values():
-            if p.role == Role.RUSSIAN_SPY:
-                return p
-        return None
-
-    def public_state_dict(self, requesting_player_id: str):
-        requester = self.players.get(requesting_player_id)
-        reveal = requester is not None
-        return {
-            "roomCode": self.room_code,
-            "phase": self.phase.value,
-            "players": [p.to_dict(reveal_role=(p.id == requesting_player_id)) for p in self.players.values()],
-            "bombPlanted": self.bomb_planted,
-        }
+    spy_tasks: list[SpyTaskInstance] = field(default_factory=list)
