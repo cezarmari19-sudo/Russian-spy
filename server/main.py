@@ -294,6 +294,34 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         "corpse": corpse.to_dict(reveal_killer=False)
                     })
 
+            elif action == "report_corpse":
+                corpse_id = data.get("corpseId", "")
+                room = game_manager.get_room(room_code)
+
+                error = game_manager.report_corpse(room_code, player_id, corpse_id)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    corpse = room.corpses.get(corpse_id) if room else None
+                    reporter = room.players.get(player_id) if room else None
+                    if corpse is not None and reporter is not None:
+                        # Corpul dispare de pe harta pentru toti (reported=True),
+                        # si identitatea victimei se dezvaluie - dar killerId
+                        # ramane ascuns (reveal_killer=False), la fel ca inainte.
+                        await broadcast_to_room(room_code, {
+                            "type": "corpse_found",
+                            "corpse": corpse.to_dict(reveal_killer=False)
+                        })
+                        # Anunta toata camera ca s-a chemat o intalnire de urgenta -
+                        # clientul va aduce toti jucatorii in meeting_room (logica
+                        # completa de vot vine intr-o etapa ulterioara).
+                        await broadcast_to_room(room_code, {
+                            "type": "meeting_called",
+                            "reason": "BODY_REPORTED",
+                            "reporterId": player_id,
+                            "reporterName": reporter.name
+                        })
+
             elif action == "delete_room":
                 error = game_manager.delete_room(room_code, player_id)
                 if error:
