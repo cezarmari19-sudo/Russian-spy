@@ -5,7 +5,7 @@ from typing import Optional
 
 from models import (
     GameRoom, GamePhase, Player, Role, RoomFunction, Room,
-    SpyTaskType, SpyTaskInstance, SPY_TASK_ALLOWED_FUNCTIONS,
+    SpyTaskType, SpyTaskInstance, SPY_TASK_ALLOWED_FUNCTIONS, Corpse,
 )
 
 
@@ -336,6 +336,89 @@ class GameManager:
 
         task.is_completed = False
         return None
+
+    def kill_player(
+        self, room_code: str, killer_id: str, victim_id: str,
+        victim_x: float, victim_y: float
+    ) -> tuple[Optional[str], Optional[Corpse]]:
+        """Spionul omoara un agent FBI. Returneaza (eroare, None) daca esueaza,
+        sau (None, corpse) daca reuseste. Conditii, la fel ca la Among Us:
+        - cel care ucide trebuie sa fie spionul viu
+        - victima trebuie sa fie un agent FBI viu
+        - amandoi trebuie sa fie in ACEEASI camera fizica
+        - NU trebuie sa existe niciun alt jucator viu si conectat in acea
+          camera (fara martori) - altfel omorul e blocat de "prea multa lume"
+        - trebuie sa fi trecut kill_cooldown_seconds de la ultimul omor reusit
+          din aceasta runda (evita spam-ul de omoruri)
+        Manusile (is_wearing_gloves) NU blocheaza omorul - doar reduc drastic
+        cantitatea de ADN lasata pe corp (vezi mai jos).
+        victim_x/victim_y vin din last_positions (main.py) - pozitia jucatorilor
+        nu e tinuta pe modelul Player, ci separat la nivel de conexiune."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista", None
+        if room.phase != GamePhase.IN_PROGRESS:
+            return "Jocul nu e in desfasurare", None
+
+        killer = room.players.get(killer_id)
+        if killer is None or killer.role != Role.RUSSIAN_SPY or not killer.is_alive:
+            return "Doar spionul viu poate omori", None
+
+        victim = room.players.get(victim_id)
+        if victim is None or victim.role != Role.FBI_AGENT or not victim.is_alive:
+            return "Tinta trebuie sa fie un agent FBI viu", None
+
+        if victim.current_room_id != killer.current_room_id:
+            return "Tinta nu e in aceeasi camera", None
+
+        witnesses = [
+            p for p in room.players.values()
+            if p.id != killer_id and p.id != victim_id
+            and p.is_alive and p.connected
+            and p.current_room_id == killer.current_room_id
+        ]
+        if witnesses:
+            return "Nu poti ucide - exista martori in camera", None
+
+        now_millis = time.time() * 1000
+        elapsed_seconds = (now_millis - room.last_kill_at_millis) / 1000.0
+        if room.last_kill_at_millis > 0 and elapsed_seconds < room.kill_cooldown_seconds:
+            remaining = room.kill_cooldown_seconds - elapsed_seconds
+            return f"Asteapta {remaining:.0f}s pana la urmatorul omor", None
+
+        # ADN ramas pe corp: 70-100% daca ucigasul nu purta manusi (identificabil
+        # aproape sigur), sau doar 10% (aproape inutilizabil) daca purta manusi -
+        # exact valorile cerute (70-100 fara manusi, poate scadea pana la 10 cu
+        # manusi).
+        if killer.is_wearing_gloves:
+            dna_completeness = 10
+        else:
+            dna_completeness = random.randint(70, 100)
+
+        victim.is_alive = False
+        room.last_kill_at_millis = now_millis
+
+        corpse = Corpse(
+            id=f"corpse_{len(room.corpses)}_{random.randint(1000, 9999)}",
+            victim_id=victim_id,
+            killer_id=killer_id,
+            room_id=victim.current_room_id,
+            x=victim_x,
+            y=victim_y,
+            dna_completeness=dna_completeness,
+        )
+        room.corpses[corpse.id] = corpse
+        return None, corpse
+
+    def get_kill_cooldown_remaining_seconds(self, room_code: str) -> float:
+        """Cate secunde mai raman pana spionul poate ucide din nou (0 daca
+        poate ucide chiar acum). Folosit pentru raspunsuri catre client, nu
+        pentru validare (validarea reala e in kill_player)."""
+        room = self.rooms.get(room_code)
+        if room is None or room.last_kill_at_millis == 0:
+            return 0.0
+        elapsed = (time.time() * 1000 - room.last_kill_at_millis) / 1000.0
+        return max(0.0, room.kill_cooldown_seconds - elapsed)
 
     def check_spy_win(self, room_code: str) -> bool:
         """True daca toate task-urile spionului sunt completate ACUM (nu au fost
