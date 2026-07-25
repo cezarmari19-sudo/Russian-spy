@@ -30,6 +30,8 @@ sealed class ServerEvent {
     data class SpyTaskUpdated(val taskId: String, val isCompleted: Boolean) : ServerEvent()
     data class SpyTaskWitnessed(val taskId: String) : ServerEvent()
     data class GameOver(val winner: String) : ServerEvent()
+    data class CorpseFound(val corpse: CorpseInfo) : ServerEvent()
+    object YouWereKilled : ServerEvent()
     data class Error(val message: String) : ServerEvent()
 }
 
@@ -41,6 +43,19 @@ data class SpyTaskInfo(
     val x: Float,
     val y: Float,
     val isCompleted: Boolean
+)
+
+/** Un corp gasit pe harta (agent FBI omorat de spion). killerId nu e trimis de
+ * server decat dupa raport/analiza ADN, deci ramane mereu null pentru clienti
+ * inainte de acel moment. */
+data class CorpseInfo(
+    val id: String,
+    val victimId: String,
+    val roomId: String,
+    val x: Float,
+    val y: Float,
+    val dnaRecovered: Boolean,
+    val reported: Boolean
 )
 
 data class LobbyPlayerInfo(
@@ -304,6 +319,23 @@ class NetworkClient(
             "game_over" -> onEvent(
                 ServerEvent.GameOver(winner = json.optString("winner", ""))
             )
+            "corpse_found" -> {
+                val c = json.getJSONObject("corpse")
+                onEvent(
+                    ServerEvent.CorpseFound(
+                        CorpseInfo(
+                            id = c.getString("id"),
+                            victimId = c.getString("victimId"),
+                            roomId = c.getString("roomId"),
+                            x = c.getDouble("x").toFloat(),
+                            y = c.getDouble("y").toFloat(),
+                            dnaRecovered = c.optBoolean("dnaRecovered", false),
+                            reported = c.optBoolean("reported", false)
+                        )
+                    )
+                )
+            }
+            "you_were_killed" -> onEvent(ServerEvent.YouWereKilled)
         }
     }
 
@@ -375,6 +407,16 @@ class NetworkClient(
         send(JSONObject().apply {
             put("action", "disable_spy_device")
             put("taskId", taskId)
+        })
+    }
+
+    /** Apelat de spion cand incearca sa omoare un agent FBI aflat in aceeasi
+     * camera. Serverul valideaza toate conditiile (martori, cooldown, etc) -
+     * clientul doar trimite intentia, nu decide singur daca reuseste. */
+    fun sendKillPlayer(targetPlayerId: String) {
+        send(JSONObject().apply {
+            put("action", "kill_player")
+            put("targetPlayerId", targetPlayerId)
         })
     }
 
