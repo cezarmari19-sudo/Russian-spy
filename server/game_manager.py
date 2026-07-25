@@ -420,6 +420,33 @@ class GameManager:
         elapsed = (time.time() * 1000 - room.last_kill_at_millis) / 1000.0
         return max(0.0, room.kill_cooldown_seconds - elapsed)
 
+    def report_corpse(self, room_code: str, reporter_id: str, corpse_id: str) -> Optional[str]:
+        """Oricine (spion SAU agent FBI) aflat langa un corp nereportat il poate
+        raporta - la fel ca la Among Us, raportarea nu are legatura cu rolul,
+        oricine descopera corpul poate suna alarma. Marcheaza corpul ca
+        raportat (dispare de pe harta pentru toti) si dezvaluie identitatea
+        victimei catre toata camera. NU dezvaluie cine e ucigasul - asta ramane
+        ascuns, la fel ca inainte de raport."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if room.phase != GamePhase.IN_PROGRESS:
+            return "Jocul nu e in desfasurare"
+
+        reporter = room.players.get(reporter_id)
+        if reporter is None or not reporter.is_alive:
+            return "Doar un jucator viu poate raporta"
+
+        corpse = room.corpses.get(corpse_id)
+        if corpse is None:
+            return "Corp invalid"
+        if corpse.reported:
+            return "Corpul a fost deja raportat"
+
+        corpse.reported = True
+        corpse.reported_by = reporter_id
+        return None
+
     def check_spy_win(self, room_code: str) -> bool:
         """True daca toate task-urile spionului sunt completate ACUM (nu au fost
         dezactivate ulterior de un agent) - victorie automata a spionului, la
