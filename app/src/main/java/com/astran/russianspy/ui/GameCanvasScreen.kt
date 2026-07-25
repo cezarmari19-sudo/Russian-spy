@@ -119,12 +119,28 @@ fun GameCanvasScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0B0D10))
             .pointerInput(Unit) {
                 detectDragGestures(
-                    onDragStart = { offset ->
-                        joystickOrigin = offset
-                        joystickKnob = offset
+                    onDragStart = { startPos ->
+                        joystickOrigin = startPos
+                        joystickKnob = startPos
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        val origin = joystickOrigin ?: return@detectDragGestures
+                        val rawOffset = change.position - origin
+                        val distance = sqrt(rawOffset.x * rawOffset.x + rawOffset.y * rawOffset.y)
+                        val clampedOffset = if (distance > JOYSTICK_BASE_RADIUS) {
+                            Offset(
+                                rawOffset.x / distance * JOYSTICK_BASE_RADIUS,
+                                rawOffset.y / distance * JOYSTICK_BASE_RADIUS
+                            )
+                        } else {
+                            rawOffset
+                        }
+                        joystickKnob = origin + clampedOffset
+                        joystickDirX = clampedOffset.x / JOYSTICK_BASE_RADIUS
+                        joystickDirY = clampedOffset.y / JOYSTICK_BASE_RADIUS
                     },
                     onDragEnd = {
                         joystickOrigin = null
@@ -138,82 +154,131 @@ fun GameCanvasScreen(
                         joystickDirX = 0f
                         joystickDirY = 0f
                     }
-                ) { change, _ ->
-                    change.consume()
-                    val origin = joystickOrigin ?: return@detectDragGestures
-                    val raw = change.position - origin
-                    val dist = sqrt(raw.x * raw.x + raw.y * raw.y)
-                    val clampedDist = dist.coerceAtMost(JOYSTICK_BASE_RADIUS)
-                    val angle = kotlin.math.atan2(raw.y, raw.x)
-                    val knobOffset = Offset(
-                        cos(angle) * clampedDist,
-                        sin(angle) * clampedDist
-                    )
-                    joystickKnob = origin + knobOffset
-
-                    if (dist > 12f) {
-                        joystickDirX = cos(angle)
-                        joystickDirY = sin(angle)
-                    } else {
-                        joystickDirX = 0f
-                        joystickDirY = 0f
-                    }
-                }
+                )
             }
     ) {
+
         Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRect(color = Color.Black, topLeft = Offset.Zero, size = size)
+
             val screenCenterX = size.width / 2f
             val screenCenterY = size.height / 2f
 
-            val camOffsetX = screenCenterX - playerX * TILE_SCALE
-            val camOffsetY = screenCenterY - playerY * TILE_SCALE
+            fun worldToScreen(wx: Float, wy: Float): Offset {
+                val dx = (wx - playerX) * TILE_SCALE
+                val dy = (wy - playerY) * TILE_SCALE
+                return Offset(screenCenterX + dx, screenCenterY + dy)
+            }
 
-            translate(left = camOffsetX, top = camOffsetY) {
-                // Fundal camere
-                BuildingLayout.rooms.forEach { room ->
-                    val color = when (room.function) {
-                        RoomFunction.HALLWAY -> Color(0xFF15181D)
-                        RoomFunction.HUB -> Color(0xFF15181D)
-                        else -> Color(0xFF1B1F26)
+            // Poligonul de vizibilitate calculat prin raycasting, in coordonate world.
+            val visibilityPolygonWorld = computeVisibilityPolygon(
+                originX = playerX,
+                originY = playerY,
+                segments = wallSegments,
+                viewRadius = VIEW_RADIUS
+            )
+
+            val visibilityPathScreen = Path().apply {
+                if (visibilityPolygonWorld.isNotEmpty()) {
+                    val first = worldToScreen(visibilityPolygonWorld[0].x, visibilityPolygonWorld[0].y)
+                    moveTo(first.x, first.y)
+                    for (i in 1 until visibilityPolygonWorld.size) {
+                        val p = worldToScreen(visibilityPolygonWorld[i].x, visibilityPolygonWorld[i].y)
+                        lineTo(p.x, p.y)
                     }
-                    drawRect(
-                        color = color,
-                        topLeft = Offset(room.x * TILE_SCALE, room.y * TILE_SCALE),
-                        size = Size(room.width * TILE_SCALE, room.height * TILE_SCALE)
-                    )
+                    close()
                 }
+            }
 
-                // Pereti
-                wallSegments.forEach { seg ->
-                    drawLine(
-                        color = Color(0xFF3A404B),
-                        start = Offset(seg.x1 * TILE_SCALE, seg.y1 * TILE_SCALE),
-                        end = Offset(seg.x2 * TILE_SCALE, seg.y2 * TILE_SCALE),
-                        strokeWidth = 6f
-                    )
-                }
+            // Tot ce desenam mai jos e "taiat" la forma poligonului vizibil - restul ramane negru.
+            clipPath(visibilityPathScreen) {
+                val viewRangeWorld = maxOf(size.width, size.height) / TILE_SCALE
+                BuildingLayout.rooms.forEach { room ->
+                    val roomCenterDist = kotlin.math.hypot(room.centerX() - playerX, room.centerY() - playerY)
+                    if (roomCenterDist > viewRangeWorld) return@forEach
 
-                // Numele camerelor (doar cele cu task, nu holuri/hub)
-                BuildingLayout.rooms.filter { it.hasTask() }.forEach { room ->
-                    drawContext.canvas.nativeCanvas.drawText(
-                        room.name,
-                        room.centerX() * TILE_SCALE,
-                        room.y * TILE_SCALE - 10f,
-                        android.graphics.Paint().apply {
-                            color = android.graphics.Color.argb(140, 255, 255, 255)
-                            textSize = 24f
-                            textAlign = android.graphics.Paint.Align.CENTER
+                    val topLeft = worldToScreen(room.x, room.y)
+                    val sizePx = Size(room.width * TILE_SCALE, room.height * TILE_SCALE)
+
+                    if (room.function == RoomFunction.HALLWAY) {
+                        // Toate holurile folosesc acelasi desen generic (lumini de tavan
+                        // repetate + covor central), indiferent de dimensiune/orientare.
+                        translate(left = topLeft.x, top = topLeft.y) {
+                            clipRect(left = 0f, top = 0f, right = sizePx.width, bottom = sizePx.height) {
+                                drawHallwayDetailed(sizePx.width, sizePx.height)
+                            }
                         }
-                    )
+                    } else if (room.id == "surveillance" || room.id == "armory" || room.id == "break_room" || room.id == "office1" || room.id == "office2" || room.id == "hub_central" || room.id == "server_room" || room.id == "meeting_room") {
+                        // Camerele detaliate se deseneaza complet vectorial - vezi RoomArt.kt
+                        // pentru continutul fiecareia, stil "FBI misterios" consistent.
+                        // translate() muta originea (0,0) in coltul camerei, ca desenul
+                        // din RoomArt sa foloseasca coordonate locale simple (0..w, 0..h).
+                        translate(left = topLeft.x, top = topLeft.y) {
+                            clipRect(left = 0f, top = 0f, right = sizePx.width, bottom = sizePx.height) {
+                                when (room.id) {
+                                    "surveillance" -> drawSurveillanceRoomDetailed(sizePx.width, sizePx.height)
+                                    "armory" -> drawArmoryRoomDetailed(sizePx.width, sizePx.height)
+                                    "break_room" -> drawBreakRoomDetailed(sizePx.width, sizePx.height)
+                                    "office1" -> drawOfficeRoomDetailed(sizePx.width, sizePx.height)
+                                    "office2" -> drawOffice2RoomDetailed(sizePx.width, sizePx.height)
+                                    "hub_central" -> drawHubCentralDetailed(sizePx.width, sizePx.height)
+                                    "server_room" -> drawServerRoomDetailed(sizePx.width, sizePx.height)
+                                    "meeting_room" -> drawMeetingRoomDetailed(sizePx.width, sizePx.height)
+                                }
+                            }
+                        }
+                    } else {
+                        drawRect(color = roomColor(room), topLeft = topLeft, size = sizePx)
+                    }
                 }
+            }
 
-                // Alti jucatori (pozitii primite de la server)
-                viewModel.otherPlayerPositions.value.forEach { (_, pos) ->
-                    drawCircle(
-                        color = Color(0xFF64B5F6),
-                        radius = playerRadius * TILE_SCALE,
-                        center = Offset(pos.x * TILE_SCALE, pos.y * TILE_SCALE)
+            // Peretii reali (dupa unire) se deseneaza o singura data, deasupra camerelor,
+            // ca sa nu mai apara linii false in mijlocul zonelor unite.
+            clipPath(visibilityPathScreen) {
+                wallSegments.forEach { seg ->
+                    val p1 = worldToScreen(seg.x1, seg.y1)
+                    val p2 = worldToScreen(seg.x2, seg.y2)
+                    drawLine(color = Color.Black, start = p1, end = p2, strokeWidth = 3f)
+                }
+            }
+
+            // Ceilalti jucatori vizibili in raza jucatorului local (nu prin pereti),
+            // desenati inainte de cercul propriu, ca sa nu se suprapuna vizual gresit.
+            clipPath(visibilityPathScreen) {
+                viewModel.playerLivePositions.entries.forEach { (otherPlayerId, pos) ->
+                    if (otherPlayerId == viewModel.localPlayerId.value) return@forEach
+                    val isVisible = isPointVisibleFromPoint(
+                        pos.x, pos.y, playerX, playerY, wallSegments, VIEW_RADIUS
                     )
+                    if (!isVisible) return@forEach
+
+                    val screenPos = worldToScreen(pos.x, pos.y)
+                    val otherColor = colorForOtherPlayer(otherPlayerId)
+
+                    drawCircle(color = otherColor, radius = playerRadius * TILE_SCALE, center = screenPos)
+                    drawCircle(
+                        color = Color(0xFF000000),
+                        radius = playerRadius * TILE_SCALE,
+                        center = screenPos,
+                        style = Stroke(width = 2f)
+                    )
+
+                    // Numele jucatorului deasupra cercului, ca sa se stie cine e.
+                    val name = viewModel.playerNames[otherPlayerId]
+                    if (!name.isNullOrBlank()) {
+                        drawContext.canvas.nativeCanvas.drawText(
+                            name,
+                            screenPos.x,
+                            screenPos.y - playerRadius * TILE_SCALE - 10f,
+                            android.graphics.Paint().apply {
+                                color = android.graphics.Color.WHITE
+                                textSize = 28f
+                                textAlign = android.graphics.Paint.Align.CENTER
+                                isAntiAlias = true
+                            }
+                        )
+                    }
                 }
             }
 
@@ -253,8 +318,8 @@ fun GameCanvasScreen(
                 .padding(16.dp)
         )
 
-        // Buton de harta (stil Among Us), colt stanga-sus - deschide mini-harta
-        // cu pozitia jucatorului si task-urile ramase.
+        // Buton de harta (stil Among Us), coltul din stanga-sus - deschide
+        // mini-harta cu pozitia jucatorului si task-urile ramase.
         IconButton(
             onClick = { showMiniMap = true },
             modifier = Modifier
@@ -323,31 +388,39 @@ fun GameCanvasScreen(
         }
 
         // Task de spion / dispozitiv suspect din apropiere - EXACT aceeasi logica
-        // de dinainte (raza de interactiune fixa langa obiectul fizic al task-ului).
+        // de proximitate ca la monitorul de supraveghere (jucatorul trebuie sa
+        // fie fizic langa punctul x/y al task-ului, nu doar in aceeasi camera).
+        // Un spion vede DOAR task-urile lui neterminate; un agent FBI vede DOAR
+        // dispozitivele deja plasate (PLANT_LISTENING_DEVICE / HACK_SURVEILLANCE_CAMERA
+        // completate) - task-urile spionului raman complet invizibile agentilor.
+        val myRole = viewModel.myRole.value
         val nearbyTask: SpyTaskInfo? = viewModel.spyTasks.firstOrNull { task ->
-            !task.isCompleted &&
-                kotlin.math.hypot(playerX - task.x, playerY - task.y) <= TASK_INTERACT_RADIUS
+            val dist = kotlin.math.hypot(playerX - task.x, playerY - task.y)
+            if (dist > TASK_INTERACT_RADIUS) return@firstOrNull false
+            val meta = SpyTaskCatalog.get(task.taskType)
+            when (myRole) {
+                Role.RUSSIAN_SPY -> !task.isCompleted
+                Role.FBI_AGENT -> task.isCompleted && meta.canBeDisabledByFbi
+                else -> false
+            }
         }
 
         if (nearbyTask != null && activeTaskDialog == null) {
-            val meta = SpyTaskCatalog.get(nearbyTask.taskType)
-            val isFbiDisableContext = viewModel.myRole.value == Role.FBI_AGENT &&
-                meta.canBeDisabledByFbi
-
+            val isDisableAction = myRole == Role.FBI_AGENT
             Button(
                 onClick = {
-                    activeTaskIsDisableAction = isFbiDisableContext
                     activeTaskDialog = nearbyTask
+                    activeTaskIsDisableAction = isDisableAction
                 },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isFbiDisableContext) Color(0xFF1976D2) else Color(0xFFB3261E)
+                    containerColor = if (isDisableAction) Color(0xFF1976D2) else Color(0xFFB3261E)
                 ),
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
+                    .align(Alignment.BottomStart)
                     .padding(24.dp)
                     .clip(RoundedCornerShape(12.dp))
             ) {
-                Text(if (isFbiDisableContext) "Dezactiveaza dispozitivul" else meta.title)
+                Text(if (isDisableAction) "⚠ Dispozitiv suspect" else "🎯 Task disponibil")
             }
         }
 
@@ -378,10 +451,108 @@ fun GameCanvasScreen(
 }
 
 /**
- * Dialog cu mini-harta stil Among Us: arata toate camerele cu task-uri,
- * pozitia curenta a jucatorului (punct galben) si task-urile inca
- * nefinalizate (puncte rosii) direct pe planul cladirii. Se deschide/inchide
- * din butonul 🗺 - nu e afisata permanent, ca sa nu aglomereze ecranul de joc.
+ * Meniul de setari suprapus peste harta jocului, deschis din rotita din
+ * dreapta-sus. Momentan contine doar optiunea de a iesi din meci, dar e
+ * structurat ca AlertDialog, deci e usor de extins ulterior cu alte setari
+ * (volum, sensibilitate joystick, etc) fara sa schimbe restul ecranului.
+ */
+@Composable
+private fun GameSettingsDialog(
+    onDismiss: () -> Unit,
+    onLeaveGame: () -> Unit
+) {
+    var confirmingLeave by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1A1D22),
+        title = { Text("Setari", color = Color.White) },
+        text = {
+            if (confirmingLeave) {
+                Text(
+                    "Sigur vrei sa iesi din meci? Nu te vei mai putea intoarce in aceasta camera.",
+                    color = Color(0xFFCCCCCC)
+                )
+            } else {
+                Text("Meniul de joc.", color = Color(0xFFCCCCCC))
+            }
+        },
+        confirmButton = {
+            if (confirmingLeave) {
+                TextButton(onClick = onLeaveGame) {
+                    Text("IESI", color = Color(0xFFE53935))
+                }
+            } else {
+                TextButton(onClick = { confirmingLeave = true }) {
+                    Text("IESI DIN MECI", color = Color(0xFFE53935))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { if (confirmingLeave) confirmingLeave = false else onDismiss() }) {
+                Text(if (confirmingLeave) "Anuleaza" else "Inchide", color = Color(0xFFAAAAAA))
+            }
+        }
+    )
+}
+
+private fun roomColor(room: Room): Color {
+    return when (room.function) {
+        RoomFunction.HALLWAY -> Color(0xFF2A2A2A)
+        RoomFunction.HUB -> Color(0xFF3A3A3A)
+        RoomFunction.ENTRANCE -> Color(0xFF455A64)
+        RoomFunction.SURVEILLANCE -> Color(0xFF4A148C)
+        RoomFunction.FORENSICS_LAB -> Color(0xFF01579B)
+        RoomFunction.ARMORY -> Color(0xFF880E4F)
+        RoomFunction.SERVER_ROOM -> Color(0xFF1B5E20)
+        RoomFunction.OFFICE -> Color(0xFF37474F)
+        RoomFunction.BREAK_ROOM -> Color(0xFF5D4037)
+        RoomFunction.COMMS_MONITOR -> Color(0xFF827717)
+        RoomFunction.MEETING_ROOM -> Color(0xFFB71C1C)
+    }
+}
+
+private fun currentRoomName(px: Float, py: Float): String {
+    val room = BuildingLayout.getRoomAtPoint(px, py)
+    return room?.name?.takeIf { it.isNotBlank() } ?: ""
+}
+
+private fun isWalkable(px: Float, py: Float, radius: Float): Boolean {
+    if (px - radius < 0f || px + radius > BuildingLayout.MAP_WIDTH) return false
+    if (py - radius < 0f || py + radius > BuildingLayout.MAP_HEIGHT) return false
+
+    val samplePoints = 8
+    for (i in 0 until samplePoints) {
+        val angle = (2.0 * Math.PI * i / samplePoints)
+        val sampleX = px + radius * cos(angle).toFloat()
+        val sampleY = py + radius * sin(angle).toFloat()
+        if (BuildingLayout.rooms.none { it.containsPoint(sampleX, sampleY) }) {
+            return false
+        }
+    }
+    return BuildingLayout.rooms.any { it.containsPoint(px, py) }
+}
+
+private fun colorForOtherPlayer(playerId: String): Color {
+    val palette = listOf(
+        Color(0xFFE53935), Color(0xFF1E88E5), Color(0xFF43A047),
+        Color(0xFFFDD835), Color(0xFF8E24AA), Color(0xFFFB8C00),
+        Color(0xFF00ACC1), Color(0xFFD81B60), Color(0xFF6D4C41),
+        Color(0xFFC0CA33)
+    )
+    val idx = (playerId.hashCode().let { if (it < 0) -it else it }) % palette.size
+    return palette[idx]
+}
+
+// Sistemul de vizibilitate (raycasting: WallSegment, buildWallSegmentsFromMergedRooms,
+// computeVisibilityPolygon, VIEW_RADIUS) e definit in Visibility.kt, ca sa fie
+// folosit identic si de camerele de supraveghere (SurveillanceMonitorsScreen).
+
+/**
+ * Dialog cu mini-harta stil Among Us: arata toate camerele, pozitia curenta a
+ * jucatorului (punct galben) si - doar pentru spion - task-urile inca
+ * nefinalizate (puncte rosii), direct pe planul cladirii. Se deschide/inchide
+ * din butonul 🗺 din coltul stanga-sus, nu e afisata permanent pe ecranul de joc.
  */
 @Composable
 private fun MiniMapDialog(
@@ -393,161 +564,100 @@ private fun MiniMapDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1A1D22),
+        title = { Text("Harta", color = Color.White) },
+        text = {
+            Column {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(BuildingLayout.MAP_WIDTH / BuildingLayout.MAP_HEIGHT)
+                        .background(Color.Black, RoundedCornerShape(8.dp))
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val scaleX = size.width / BuildingLayout.MAP_WIDTH
+                        val scaleY = size.height / BuildingLayout.MAP_HEIGHT
+
+                        BuildingLayout.rooms.forEach { room ->
+                            val color = when (room.function) {
+                                RoomFunction.HALLWAY, RoomFunction.HUB -> Color(0xFF20242C)
+                                else -> Color(0xFF2A2F38)
+                            }
+                            drawRect(
+                                color = color,
+                                topLeft = Offset(room.x * scaleX, room.y * scaleY),
+                                size = Size(room.width * scaleX, room.height * scaleY)
+                            )
+                            drawRect(
+                                color = Color(0xFF3A404B),
+                                topLeft = Offset(room.x * scaleX, room.y * scaleY),
+                                size = Size(room.width * scaleX, room.height * scaleY),
+                                style = Stroke(width = 1.5f)
+                            )
+                        }
+
+                        // Task-urile nefinalizate, vizibile DOAR pentru spion - agentii
+                        // FBI nu vad locatia exacta a task-urilor neterminate pe harta.
+                        if (myRole == Role.RUSSIAN_SPY) {
+                            spyTasks.filter { !it.isCompleted }.forEach { task ->
+                                drawCircle(
+                                    color = Color(0xFFE53935).copy(alpha = 0.35f),
+                                    radius = 16f,
+                                    center = Offset(task.x * scaleX, task.y * scaleY)
+                                )
+                                drawCircle(
+                                    color = Color(0xFFE53935),
+                                    radius = 9f,
+                                    center = Offset(task.x * scaleX, task.y * scaleY)
+                                )
+                            }
+                        }
+
+                        // Pozitia jucatorului (punct galben, ca in joc)
+                        drawCircle(
+                            color = Color(0xFFFFD700),
+                            radius = 10f,
+                            center = Offset(playerX * scaleX, playerY * scaleY)
+                        )
+                        drawCircle(
+                            color = Color.Black,
+                            radius = 10f,
+                            center = Offset(playerX * scaleX, playerY * scaleY),
+                            style = Stroke(width = 2f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(Color(0xFFFFD700))
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Tu", color = Color(0xFFCCCCCC), fontSize = 12.sp)
+
+                    if (myRole == Role.RUSSIAN_SPY) {
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(Color(0xFFE53935))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Task ramas", color = Color(0xFFCCCCCC), fontSize = 12.sp)
+                    }
+                }
+            }
+        },
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("Inchide", color = Color.White)
             }
-        },
-        containerColor = Color(0xFF15181D),
-        title = { Text("Harta", color = Color.White) },
-        text = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(BuildingLayout.MAP_WIDTH / BuildingLayout.MAP_HEIGHT)
-                    .background(Color(0xFF0B0D10), RoundedCornerShape(8.dp))
-            ) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val scaleX = size.width / BuildingLayout.MAP_WIDTH
-                    val scaleY = size.height / BuildingLayout.MAP_HEIGHT
-
-                    // Camere (contur simplu, doar cele cu task au eticheta)
-                    BuildingLayout.rooms.forEach { room ->
-                        val color = when (room.function) {
-                            RoomFunction.HALLWAY, RoomFunction.HUB -> Color(0xFF20242C)
-                            else -> Color(0xFF2A2F38)
-                        }
-                        drawRect(
-                            color = color,
-                            topLeft = Offset(room.x * scaleX, room.y * scaleY),
-                            size = Size(room.width * scaleX, room.height * scaleY)
-                        )
-                        drawRect(
-                            color = Color(0xFF3A404B),
-                            topLeft = Offset(room.x * scaleX, room.y * scaleY),
-                            size = Size(room.width * scaleX, room.height * scaleY),
-                            style = Stroke(width = 1.5f)
-                        )
-                    }
-
-                    // Task-urile nefinalizate ale spionului (punct rosu + puls)
-                    // vizibile doar pentru rolul de spion; agentii FBI vad doar
-                    // camerele, nu locatia exacta a task-urilor inca neefectuate.
-                    if (myRole == Role.Spy) {
-                        spyTasks.filter { !it.isCompleted }.forEach { task ->
-                            drawCircle(
-                                color = Color(0xFFE53935),
-                                radius = 9f,
-                                center = Offset(task.x * scaleX, task.y * scaleY)
-                            )
-                            drawCircle(
-                                color = Color(0xFFE53935).copy(alpha = 0.35f),
-                                radius = 16f,
-                                center = Offset(task.x * scaleX, task.y * scaleY)
-                            )
-                        }
-                    }
-
-                    // Pozitia jucatorului (punct galben, ca in joc)
-                    drawCircle(
-                        color = Color(0xFFFFD700),
-                        radius = 10f,
-                        center = Offset(playerX * scaleX, playerY * scaleY)
-                    )
-                    drawCircle(
-                        color = Color.Black,
-                        radius = 10f,
-                        center = Offset(playerX * scaleX, playerY * scaleY),
-                        style = Stroke(width = 2f)
-                    )
-                }
-
-                // Etichete text peste camerele cu task, pozitionate direct pe canvas
-                BuildingLayout.rooms.filter { it.hasTask() }.forEach { room ->
-                    val scaleX = 1f / BuildingLayout.MAP_WIDTH
-                    val scaleY = 1f / BuildingLayout.MAP_HEIGHT
-                    Text(
-                        text = room.name,
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 8.sp,
-                        modifier = Modifier.offset(
-                            x = (room.centerX() * scaleX).let { frac -> (frac * 100).dp * 0f } // placeholder, pozitionare reala prin fractiuni de Box de mai jos
-                        )
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .background(Color(0xFFFFD700), RoundedCornerShape(50))
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Tu", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
-
-                if (myRole == Role.Spy) {
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .background(Color(0xFFE53935), RoundedCornerShape(50))
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Task ramas", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
-                }
-            }
         }
-    )
-}
-
-private fun currentRoomName(px: Float, py: Float): String {
-    val room = BuildingLayout.getRoomAtPoint(px, py)
-    return room?.name?.takeIf { it.isNotEmpty() } ?: ""
-}
-
-private fun isWalkable(px: Float, py: Float, radius: Float): Boolean {
-    if (px - radius < 0 || px + radius > BuildingLayout.MAP_WIDTH) return false
-    if (py - radius < 0 || py + radius > BuildingLayout.MAP_HEIGHT) return false
-    return BuildingLayout.getRoomAtPoint(px, py) != null
-}
-
-private data class WallSegment(val x1: Float, val y1: Float, val x2: Float, val y2: Float)
-
-private fun buildWallSegmentsFromMergedRooms(rooms: List<Room>): List<WallSegment> {
-    // Pastram implementarea originala neschimbata - genereaza segmentele de
-    // perete prin unirea camerelor adiacente, ca sa evite "usi fantoma".
-    val segments = mutableListOf<WallSegment>()
-    rooms.forEach { room ->
-        segments.add(WallSegment(room.x, room.y, room.x + room.width, room.y))
-        segments.add(WallSegment(room.x, room.y + room.height, room.x + room.width, room.y + room.height))
-        segments.add(WallSegment(room.x, room.y, room.x, room.y + room.height))
-        segments.add(WallSegment(room.x + room.width, room.y, room.x + room.width, room.y + room.height))
-    }
-    return segments
-}
-
-@Composable
-private fun GameSettingsDialog(
-    onDismiss: () -> Unit,
-    onLeaveGame: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = onLeaveGame) {
-                Text("Iesi din meci", color = Color(0xFFE53935))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Anuleaza", color = Color.White)
-            }
-        },
-        containerColor = Color(0xFF15181D),
-        title = { Text("Setari", color = Color.White) },
-        text = { Text("Vrei sa iesi din meciul curent?", color = Color.White.copy(alpha = 0.8f)) }
     )
 }
