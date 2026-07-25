@@ -28,8 +28,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.astran.russianspy.data.BuildingLayout
+import com.astran.russianspy.model.Role
 import com.astran.russianspy.model.Room
 import com.astran.russianspy.model.RoomFunction
+import com.astran.russianspy.model.SpyTaskCatalog
+import com.astran.russianspy.network.SpyTaskInfo
+import com.astran.russianspy.ui.tasks.HoldToCompleteTaskDialog
 import com.astran.russianspy.viewmodel.GameViewModel
 import kotlin.math.cos
 import kotlin.math.sin
@@ -39,6 +43,9 @@ private const val TILE_SCALE = 2.2f
 private const val JOYSTICK_BASE_RADIUS = 100f
 private const val JOYSTICK_KNOB_RADIUS = 40f
 // VIEW_RADIUS e definit in Visibility.kt (folosit si de camerele de supraveghere)
+// Aceeasi raza ca la monitorul de supraveghere - jucatorul trebuie sa fie fizic
+// langa punctul exact al task-ului/dispozitivului, nu doar in aceeasi camera.
+private const val TASK_INTERACT_RADIUS = BuildingLayout.MONITOR_INTERACT_RADIUS
 
 @Composable
 fun GameCanvasScreen(
@@ -68,6 +75,11 @@ fun GameCanvasScreen(
     val wallSegments = remember { buildWallSegmentsFromMergedRooms(BuildingLayout.rooms) }
 
     var currentRoomIdLocal by remember { mutableStateOf("") }
+
+    // Task-ul (de spion) sau dispozitivul (vazut de un agent FBI) aflat curent
+    // deschis in dialogul de "hold to complete" - null cand niciunul nu e activ.
+    var activeTaskDialog by remember { mutableStateOf<SpyTaskInfo?>(null) }
+    var activeTaskIsDisableAction by remember { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -348,6 +360,66 @@ fun GameCanvasScreen(
             ) {
                 Text("📹 Camere")
             }
+        }
+
+        // Task de spion / dispozitiv suspect din apropiere - EXACT aceeasi logica
+        // de proximitate ca la monitorul de supraveghere (jucatorul trebuie sa
+        // fie fizic langa punctul x/y al task-ului, nu doar in aceeasi camera).
+        // Un spion vede DOAR task-urile lui neterminate; un agent FBI vede DOAR
+        // dispozitivele deja plasate (PLANT_LISTENING_DEVICE / HACK_SURVEILLANCE_CAMERA
+        // completate) - task-urile spionului raman complet invizibile agentilor.
+        val myRole = viewModel.myRole.value
+        val nearbyTask: SpyTaskInfo? = viewModel.spyTasks.firstOrNull { task ->
+            val dist = kotlin.math.hypot(playerX - task.x, playerY - task.y)
+            if (dist > TASK_INTERACT_RADIUS) return@firstOrNull false
+            val meta = SpyTaskCatalog.get(task.taskType)
+            when (myRole) {
+                Role.RUSSIAN_SPY -> !task.isCompleted
+                Role.FBI_AGENT -> task.isCompleted && meta.canBeDisabledByFbi
+                else -> false
+            }
+        }
+
+        if (nearbyTask != null && activeTaskDialog == null) {
+            val isDisableAction = myRole == Role.FBI_AGENT
+            Button(
+                onClick = {
+                    activeTaskDialog = nearbyTask
+                    activeTaskIsDisableAction = isDisableAction
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isDisableAction) Color(0xFF1976D2) else Color(0xFFB3261E)
+                ),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(24.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            ) {
+                Text(if (isDisableAction) "⚠ Dispozitiv suspect" else "🎯 Task disponibil")
+            }
+        }
+
+        activeTaskDialog?.let { task ->
+            val meta = SpyTaskCatalog.get(task.taskType)
+            HoldToCompleteTaskDialog(
+                title = if (activeTaskIsDisableAction) "Dezactiveaza dispozitivul" else meta.title,
+                description = if (activeTaskIsDisableAction) {
+                    "Un agent FBI poate neutraliza acest dispozitiv gasit in camera."
+                } else {
+                    meta.description
+                },
+                durationSeconds = meta.durationSeconds,
+                accentColor = if (activeTaskIsDisableAction) Color(0xFF1976D2) else meta.accentColor,
+                onComplete = {
+                    if (activeTaskIsDisableAction) {
+                        viewModel.disableSpyDevice(task.id)
+                    } else {
+                        viewModel.completeSpyTask(task.id)
+                    }
+                    activeTaskDialog = null
+                },
+                onCancel = { activeTaskDialog = null }
+            )
         }
     }
 }
