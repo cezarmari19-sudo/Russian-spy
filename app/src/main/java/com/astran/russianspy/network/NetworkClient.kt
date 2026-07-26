@@ -32,7 +32,18 @@ sealed class ServerEvent {
     data class GameOver(val winner: String) : ServerEvent()
     data class CorpseFound(val corpse: CorpseInfo) : ServerEvent()
     object YouWereKilled : ServerEvent()
-    data class MeetingCalled(val reason: String, val reporterId: String, val reporterName: String) : ServerEvent()
+    data class MeetingCalled(
+        val reason: String,
+        val reporterId: String,
+        val reporterName: String,
+        val durationSeconds: Float
+    ) : ServerEvent()
+    data class VoteCast(val voterId: String) : ServerEvent()
+    data class MeetingResolved(
+        val ejectedPlayerId: String?,
+        val ejectedPlayerName: String?,
+        val wasSpy: Boolean
+    ) : ServerEvent()
     data class Error(val message: String) : ServerEvent()
 }
 
@@ -341,7 +352,18 @@ class NetworkClient(
                 ServerEvent.MeetingCalled(
                     reason = json.optString("reason", ""),
                     reporterId = json.optString("reporterId", ""),
-                    reporterName = json.optString("reporterName", "")
+                    reporterName = json.optString("reporterName", ""),
+                    durationSeconds = json.optDouble("durationSeconds", 75.0).toFloat()
+                )
+            )
+            "vote_cast" -> onEvent(
+                ServerEvent.VoteCast(voterId = json.getString("voterId"))
+            )
+            "meeting_resolved" -> onEvent(
+                ServerEvent.MeetingResolved(
+                    ejectedPlayerId = if (json.isNull("ejectedPlayerId")) null else json.optString("ejectedPlayerId", null),
+                    ejectedPlayerName = if (json.isNull("ejectedPlayerName")) null else json.optString("ejectedPlayerName", null),
+                    wasSpy = json.optBoolean("wasSpy", false)
                 )
             )
         }
@@ -434,6 +456,17 @@ class NetworkClient(
         send(JSONObject().apply {
             put("action", "report_corpse")
             put("corpseId", corpseId)
+        })
+    }
+
+    /** Trimite votul jucatorului in meeting-ul activ curent. targetPlayerId
+     * null inseamna vot explicit de "skip" (abtinere), diferit de a nu vota
+     * deloc - serverul reseteaza votul daca e trimis din nou (jucatorul se
+     * poate razgandi cat timp meeting-ul e inca activ). */
+    fun sendCastVote(targetPlayerId: String?) {
+        send(JSONObject().apply {
+            put("action", "cast_vote")
+            put("targetPlayerId", targetPlayerId ?: JSONObject.NULL)
         })
     }
 
