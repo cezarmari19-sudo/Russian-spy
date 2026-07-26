@@ -58,8 +58,12 @@ async def broadcast_lobby_update(room_code: str):
     room = game_manager.get_room(room_code)
     if room is None:
         return
+    # isAlive e INCLUS aici (nu doar id/name/connected) - clientul are nevoie
+    # de el ca sa stie cine mai e in viata cand construieste lista de vot din
+    # meeting (fara asta, jucatorii morti apareau in numaratoarea "X din Y au
+    # votat" desi nu pot vota niciodata, si votul parea mereu "incomplet").
     players_payload = [
-        {"id": p.id, "name": p.name, "connected": p.connected}
+        {"id": p.id, "name": p.name, "connected": p.connected, "isAlive": p.is_alive}
         for p in room.players.values()
     ]
     await broadcast_to_room(room_code, {
@@ -98,6 +102,11 @@ async def _meeting_watcher(room_code: str):
             "ejectedPlayerName": ejected_name,
             "wasSpy": result["wasSpy"],
         })
+
+        # Cineva tocmai a devenit "mort" (daca ejected_id nu e None) - retrimitem
+        # lista de jucatori actualizata, ca isAlive sa fie corect pe client
+        # inainte de urmatorul meeting eventual.
+        await broadcast_lobby_update(room_code)
 
         if result["wasSpy"]:
             await broadcast_to_room(room_code, {"type": "game_over", "winner": "FBI_AGENT"})
@@ -225,6 +234,10 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         "type": "surveillance_cameras_assigned",
                         "spots": room.surveillance_cameras
                     })
+                    # Trimitem si lista de jucatori actualizata (isAlive=True
+                    # pentru toti, roluri resetate) - ca ecranele care depind
+                    # de lobbyPlayers sa porneasca de la o stare corecta.
+                    await broadcast_lobby_update(room_code)
 
             elif action == "kick_player" or action == "ban_player":
                 target_player_id = data.get("targetPlayerId", "")
@@ -336,6 +349,11 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         "type": "corpse_found",
                         "corpse": corpse.to_dict(reveal_killer=False)
                     })
+                    # Victima tocmai a devenit is_alive=False - retrimitem lista
+                    # de jucatori, ca isAlive sa fie corect pe TOTI clientii
+                    # inainte de un eventual meeting viitor (asa se repara
+                    # bug-ul cu "X din Y au votat" numarand gresit mortii).
+                    await broadcast_lobby_update(room_code)
 
             elif action == "report_corpse":
                 corpse_id = data.get("corpseId", "")
@@ -366,6 +384,10 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                             "reporterName": meeting.reporter_name,
                             "durationSeconds": meeting.duration_seconds,
                         })
+                        # Trimitem lista de jucatori (cu isAlive corect) chiar
+                        # inainte de meeting, ca ecranul de vot sa numere corect
+                        # din start cine e viu si cine nu.
+                        await broadcast_lobby_update(room_code)
                         # Pornim watcher-ul de fundal care va rezolva automat
                         # votul la expirarea timpului, chiar daca nu toti au votat.
                         if room_code not in _meeting_watchers:
