@@ -674,10 +674,14 @@ private fun MeetingVoteScreen(
 
     // Lista jucatorilor vii, EXCLUZAND jucatorul local (nu are sens sa te
     // votezi pe tine insuti ca "suspect", iar skip acopera si acest caz).
+    // Filtram dupa isAlive, NU doar connected - un jucator mort dar inca
+    // conectat (ecran de spectator) NU trebuie sa apara in lista de vot si
+    // NU trebuie numarat la "X din Y au votat", altfel numaratoarea nu ajunge
+    // niciodata la total (jucatorul mort nu poate vota niciodata).
     val alivePlayers: List<LobbyPlayerInfo> = viewModel.lobbyPlayers.filter {
-        it.id != viewModel.localPlayerId.value && it.connected
+        it.id != viewModel.localPlayerId.value && it.connected && it.isAlive
     }
-    val totalVoters = viewModel.lobbyPlayers.count { it.connected }
+    val totalVoters = viewModel.lobbyPlayers.count { it.connected && it.isAlive }
     val votedCount = viewModel.playersWhoVoted.size
 
     Box(
