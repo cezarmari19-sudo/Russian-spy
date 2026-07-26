@@ -215,6 +215,32 @@ class IntelMessage:
 
 
 @dataclass
+class Meeting:
+    """O intalnire de urgenta (chemata prin raportarea unui corp), stil Among
+    Us: toti jucatorii vii sunt adusi in meeting_room, au un timp fix de vot,
+    apoi jucatorul cel mai votat e exclus (majoritate simpla - daca e egalitate,
+    inclusiv egalitate cu numarul de skip-uri, nimeni nu e exclus)."""
+    started_at_millis: float
+    duration_seconds: float = 75.0
+    # player_id -> target_player_id votat, sau None daca a votat explicit "skip".
+    # Un player_id care NU apare inca in acest dict inseamna ca nu a votat inca.
+    votes: dict[str, Optional[str]] = field(default_factory=dict)
+    reporter_id: str = ""
+    reporter_name: str = ""
+    resolved: bool = False
+
+    def to_dict(self, remaining_seconds: float):
+        return {
+            "startedAtMillis": self.started_at_millis,
+            "durationSeconds": self.duration_seconds,
+            "remainingSeconds": remaining_seconds,
+            "reporterId": self.reporter_id,
+            "reporterName": self.reporter_name,
+            "votedPlayerIds": list(self.votes.keys()),
+        }
+
+
+@dataclass
 class GameRoom:
     """Reprezinta o camera/lobby de joc (partida), nu o camera fizica din cladire."""
     room_code: str
@@ -233,6 +259,9 @@ class GameRoom:
     # Momentul (epoch seconds) ultimului omor reusit - folosit ca sa calculam
     # daca a trecut cooldown-ul. 0 inseamna "niciun omor inca in aceasta runda".
     last_kill_at_millis: float = 0.0
+    # Intalnirea activa curenta (raport de corp) - None daca nu e niciuna in
+    # desfasurare acum. Doar UNA poate fi activa simultan intr-o camera.
+    active_meeting: Optional[Meeting] = None
     bomb_planted: bool = False
     bomb_armed_at_millis: int = 0
     created_at: float = field(default_factory=time.time)
