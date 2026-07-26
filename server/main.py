@@ -29,6 +29,13 @@ account_connections: dict[str, WebSocket] = {}
 # tine minte ultima pozitie X/Y cunoscuta pentru fiecare jucator, per camera de joc
 last_positions: dict[str, dict[str, dict]] = {}
 
+# Codurile de camera care au ACUM un task de fundal activ pentru urmarirea
+# expirarii unui meeting - evita pornirea a doi watcheri suprapusi pentru
+# aceeasi camera daca se raporteaza rapid mai multe corpuri (nu se poate
+# oricum, report_corpse blocheaza un al doilea meeting cat unul e activ, dar
+# ramane o plasa de siguranta ieftina).
+_meeting_watchers: set[str] = set()
+
 
 @app.get("/")
 async def health_check():
@@ -60,6 +67,42 @@ async def broadcast_lobby_update(room_code: str):
         "players": players_payload,
         "hostId": room.host_id
     })
+
+
+async def _meeting_watcher(room_code: str):
+    """Task de fundal pornit la fiecare meeting nou: asteapta pana expira
+    timpul de vot (sau pana meeting-ul e deja rezolvat manual, caz care nu
+    exista inca dar ramane robust pentru viitor), apoi rezolva automat
+    rezultatul si il trimite la toata camera. O singura instanta ruleaza per
+    camera odata (vezi _meeting_watchers)."""
+    try:
+        while True:
+            room = game_manager.get_room(room_code)
+            if room is None or room.active_meeting is None:
+                return
+            if game_manager.is_meeting_expired(room_code):
+                break
+            await asyncio.sleep(1.0)
+
+        result = game_manager.resolve_meeting(room_code)
+        if result is None:
+            return
+
+        room = game_manager.get_room(room_code)
+        ejected_id = result["ejectedPlayerId"]
+        ejected_name = room.players[ejected_id].name if (room and ejected_id and ejected_id in room.players) else None
+
+        await broadcast_to_room(room_code, {
+            "type": "meeting_resolved",
+            "ejectedPlayerId": ejected_id,
+            "ejectedPlayerName": ejected_name,
+            "wasSpy": result["wasSpy"],
+        })
+
+        if result["wasSpy"]:
+            await broadcast_to_room(room_code, {"type": "game_over", "winner": "FBI_AGENT"})
+    finally:
+        _meeting_watchers.discard(room_code)
 
 
 @app.websocket("/ws/account/{account_id}")
@@ -298,13 +341,12 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                 corpse_id = data.get("corpseId", "")
                 room = game_manager.get_room(room_code)
 
-                error = game_manager.report_corpse(room_code, player_id, corpse_id)
+                error, meeting = game_manager.report_corpse(room_code, player_id, corpse_id)
                 if error:
                     await websocket.send_text(json.dumps({"type": "error", "message": error}))
                 else:
                     corpse = room.corpses.get(corpse_id) if room else None
-                    reporter = room.players.get(player_id) if room else None
-                    if corpse is not None and reporter is not None:
+                    if corpse is not None:
                         # Corpul dispare de pe harta pentru toti (reported=True),
                         # si identitatea victimei se dezvaluie - dar killerId
                         # ramane ascuns (reveal_killer=False), la fel ca inainte.
@@ -312,15 +354,38 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                             "type": "corpse_found",
                             "corpse": corpse.to_dict(reveal_killer=False)
                         })
+
+                    if meeting is not None:
                         # Anunta toata camera ca s-a chemat o intalnire de urgenta -
-                        # clientul va aduce toti jucatorii in meeting_room (logica
-                        # completa de vot vine intr-o etapa ulterioara).
+                        # clientul aduce toti jucatorii vii in meeting_room si
+                        # deschide ecranul de vot cu numaratoare inversa.
                         await broadcast_to_room(room_code, {
                             "type": "meeting_called",
                             "reason": "BODY_REPORTED",
-                            "reporterId": player_id,
-                            "reporterName": reporter.name
+                            "reporterId": meeting.reporter_id,
+                            "reporterName": meeting.reporter_name,
+                            "durationSeconds": meeting.duration_seconds,
                         })
+                        # Pornim watcher-ul de fundal care va rezolva automat
+                        # votul la expirarea timpului, chiar daca nu toti au votat.
+                        if room_code not in _meeting_watchers:
+                            _meeting_watchers.add(room_code)
+                            asyncio.create_task(_meeting_watcher(room_code))
+
+            elif action == "cast_vote":
+                # targetPlayerId absent sau null in JSON => vot de "skip" (None).
+                target_player_id = data.get("targetPlayerId")
+                error = game_manager.cast_vote(room_code, player_id, target_player_id)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    # Anuntam camera CINE a votat (nu si cu CE) - pastreaza votul
+                    # secret pana la rezolvarea finala, dar arata progresul
+                    # ("X din Y au votat"), la fel ca la Among Us.
+                    await broadcast_to_room(room_code, {
+                        "type": "vote_cast",
+                        "voterId": player_id
+                    })
 
             elif action == "delete_room":
                 error = game_manager.delete_room(room_code, player_id)
