@@ -32,6 +32,7 @@ sealed class ServerEvent {
     data class GameOver(val winner: String) : ServerEvent()
     data class CorpseFound(val corpse: CorpseInfo) : ServerEvent()
     object YouWereKilled : ServerEvent()
+    data class MeetingCalled(val reason: String, val reporterId: String, val reporterName: String) : ServerEvent()
     data class Error(val message: String) : ServerEvent()
 }
 
@@ -336,6 +337,13 @@ class NetworkClient(
                 )
             }
             "you_were_killed" -> onEvent(ServerEvent.YouWereKilled)
+            "meeting_called" -> onEvent(
+                ServerEvent.MeetingCalled(
+                    reason = json.optString("reason", ""),
+                    reporterId = json.optString("reporterId", ""),
+                    reporterName = json.optString("reporterName", "")
+                )
+            )
         }
     }
 
@@ -417,6 +425,15 @@ class NetworkClient(
         send(JSONObject().apply {
             put("action", "kill_player")
             put("targetPlayerId", targetPlayerId)
+        })
+    }
+
+    /** Apelat de ORICE jucator viu (spion sau agent FBI) aflat langa un corp
+     * nereportat, ca sa il raporteze - aduce toata camera intr-un meeting. */
+    fun sendReportCorpse(corpseId: String) {
+        send(JSONObject().apply {
+            put("action", "report_corpse")
+            put("corpseId", corpseId)
         })
     }
 
