@@ -35,6 +35,9 @@ data class FriendRoomInviteInfo(val fromDisplayName: String, val fromFriendCode:
 /** De ce am fost scosi din camera curenta de catre host. */
 enum class RemovalReason { KICKED, BANNED }
 
+/** O intalnire chemata (raport de corp), cu numele celui care a raportat. */
+data class MeetingInfo(val reason: String, val reporterId: String, val reporterName: String)
+
 class GameViewModel : ViewModel() {
 
     private val _gameState = mutableStateOf<GameState?>(null)
@@ -158,6 +161,22 @@ class GameViewModel : ViewModel() {
         networkClient?.sendKillPlayer(targetPlayerId)
     }
 
+    /** Apelat de ORICE jucator viu (spion sau agent FBI) aflat langa un corp
+     * nereportat, ca sa il raporteze. */
+    fun reportCorpse(corpseId: String) {
+        networkClient?.sendReportCorpse(corpseId)
+    }
+
+    // Ultima intalnire chemata (raport de corp) - GameCanvasScreen observa asta
+    // si aduce ecranul de meeting (logica completa de vot vine intr-o etapa
+    // ulterioara; deocamdata e doar notificarea ca s-a chemat un meeting).
+    private val _activeMeeting = mutableStateOf<MeetingInfo?>(null)
+    val activeMeeting: State<MeetingInfo?> = _activeMeeting
+
+    fun acknowledgeMeeting() {
+        _activeMeeting.value = null
+    }
+
     // Devine "RUSSIAN_SPY" sau "FBI_AGENT" cand jocul s-a incheiat (victorie automata
     // a spionului prin task-uri, sau alt mod de final adaugat ulterior). Ecranul curent
     // observa asta si navigheaza spre un ecran de final de joc.
@@ -197,6 +216,7 @@ class GameViewModel : ViewModel() {
         _roomIsPrivate.value = false
         _spyTaskCount.value = 5
         _gameOverWinner.value = null
+        _activeMeeting.value = null
 
         lobbyPlayers.clear()
         playerNames.clear()
@@ -226,6 +246,7 @@ class GameViewModel : ViewModel() {
         _localPlayerY.value = BuildingLayout.START_Y
         _spyTaskCount.value = 5
         _gameOverWinner.value = null
+        _activeMeeting.value = null
 
         lobbyPlayers.clear()
         playerLivePositions.clear()
@@ -451,6 +472,13 @@ class GameViewModel : ViewModel() {
             }
             is ServerEvent.YouWereKilled -> {
                 _isDead.value = true
+            }
+            is ServerEvent.MeetingCalled -> {
+                _activeMeeting.value = MeetingInfo(
+                    reason = event.reason,
+                    reporterId = event.reporterId,
+                    reporterName = event.reporterName
+                )
             }
             is ServerEvent.LobbyUpdate -> {
                 lobbyPlayers.clear()
