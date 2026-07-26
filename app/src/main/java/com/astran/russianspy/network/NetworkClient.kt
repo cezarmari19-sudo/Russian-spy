@@ -70,10 +70,14 @@ data class CorpseInfo(
     val reported: Boolean
 )
 
+/** isAlive e ESENTIAL pentru ecranul de vot din meeting - fara el, jucatorii
+ * morti apareau in numaratoarea "X din Y au votat" desi nu pot vota niciodata,
+ * facand votul sa para mereu "incomplet" pentru cei vii. */
 data class LobbyPlayerInfo(
     val id: String,
     val name: String,
-    val connected: Boolean
+    val connected: Boolean,
+    val isAlive: Boolean = true
 )
 
 data class PlayerPositionInfo(
@@ -285,7 +289,8 @@ class NetworkClient(
                     LobbyPlayerInfo(
                         id = p.getString("id"),
                         name = p.getString("name"),
-                        connected = p.optBoolean("connected", true)
+                        connected = p.optBoolean("connected", true),
+                        isAlive = p.optBoolean("isAlive", true)
                     )
                 }
                 onEvent(ServerEvent.LobbyUpdate(players, hostId = json.optString("hostId", "")))
