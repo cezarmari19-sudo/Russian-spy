@@ -50,6 +50,9 @@ private const val TASK_INTERACT_RADIUS = BuildingLayout.MONITOR_INTERACT_RADIUS
 // Raza in care spionul poate omori un agent FBI - identica cu raza de
 // interactiune a task-urilor, ca sa fie consistenta cu restul jocului.
 private const val KILL_INTERACT_RADIUS = BuildingLayout.MONITOR_INTERACT_RADIUS
+// Raza in care ORICE jucator (spion sau FBI) poate raporta un corp gasit -
+// aceeasi raza ca la interactiunile de task/omor, pentru consistenta.
+private const val REPORT_INTERACT_RADIUS = BuildingLayout.MONITOR_INTERACT_RADIUS
 
 @Composable
 fun GameCanvasScreen(
@@ -481,6 +484,28 @@ fun GameCanvasScreen(
             }
         }
 
+        // Buton "Raporteaza corpul" - vizibil pentru ORICE rol (spion SAU agent
+        // FBI), DOAR cand jucatorul e langa un corp inca nereportat. La fel ca
+        // la Among Us, oricine gaseste corpul poate suna alarma, indiferent de
+        // rol. Pozitionat central-jos, deasupra butonului de task, ca sa nu se
+        // suprapuna vizual cu el (ambele pot fi vizibile teoretic in acelasi timp).
+        val nearbyCorpse: CorpseInfo? = viewModel.corpses.firstOrNull { corpse ->
+            !corpse.reported &&
+                kotlin.math.hypot(playerX - corpse.x, playerY - corpse.y) <= REPORT_INTERACT_RADIUS
+        }
+        if (nearbyCorpse != null && activeTaskDialog == null) {
+            Button(
+                onClick = { viewModel.reportCorpse(nearbyCorpse.id) },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E)),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 96.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            ) {
+                Text("📢 Raporteaza corpul")
+            }
+        }
+
         // Task de spion / dispozitiv suspect din apropiere - EXACT aceeasi logica
         // de proximitate ca la monitorul de supraveghere (jucatorul trebuie sa
         // fie fizic langa punctul x/y al task-ului, nu doar in aceeasi camera).
@@ -568,6 +593,28 @@ fun GameCanvasScreen(
                     )
                 }
             }
+        }
+
+        // Notificare simpla de "s-a chemat un meeting" (raport de corp) - doar
+        // un dialog informativ deocamdata; logica completa de vot/aducere in
+        // meeting_room vine intr-o etapa ulterioara.
+        viewModel.activeMeeting.value?.let { meeting ->
+            AlertDialog(
+                onDismissRequest = { viewModel.acknowledgeMeeting() },
+                containerColor = Color(0xFF1A1D22),
+                title = { Text("Intalnire de urgenta", color = Color.White) },
+                text = {
+                    Text(
+                        "${meeting.reporterName} a raportat un corp gasit in cladire.",
+                        color = Color(0xFFCCCCCC)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.acknowledgeMeeting() }) {
+                        Text("Am inteles", color = Color.White)
+                    }
+                }
+            )
         }
     }
 }
