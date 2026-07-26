@@ -35,8 +35,23 @@ data class FriendRoomInviteInfo(val fromDisplayName: String, val fromFriendCode:
 /** De ce am fost scosi din camera curenta de catre host. */
 enum class RemovalReason { KICKED, BANNED }
 
-/** O intalnire chemata (raport de corp), cu numele celui care a raportat. */
-data class MeetingInfo(val reason: String, val reporterId: String, val reporterName: String)
+/** O intalnire chemata (raport de corp), cu numele celui care a raportat SI
+ * durata totala a votului (secunde) - clientul isi calculeaza local timpul
+ * ramas din startedAtMillis + durationSeconds. */
+data class MeetingInfo(
+    val reason: String,
+    val reporterId: String,
+    val reporterName: String,
+    val durationSeconds: Float,
+    val startedAtMillis: Long
+)
+
+/** Rezultatul final al unui meeting rezolvat (dupa expirarea timpului de vot). */
+data class MeetingResultInfo(
+    val ejectedPlayerId: String?,
+    val ejectedPlayerName: String?,
+    val wasSpy: Boolean
+)
 
 class GameViewModel : ViewModel() {
 
@@ -167,11 +182,42 @@ class GameViewModel : ViewModel() {
         networkClient?.sendReportCorpse(corpseId)
     }
 
-    // Ultima intalnire chemata (raport de corp) - GameCanvasScreen observa asta
-    // si aduce ecranul de meeting (logica completa de vot vine intr-o etapa
-    // ulterioara; deocamdata e doar notificarea ca s-a chemat un meeting).
+    // Intalnirea activa curenta (raport de corp) - GameCanvasScreen observa
+    // asta si aduce ecranul complet de meeting (cronometru + lista de vot).
+    // null inseamna ca niciun meeting nu e activ acum.
     private val _activeMeeting = mutableStateOf<MeetingInfo?>(null)
     val activeMeeting: State<MeetingInfo?> = _activeMeeting
+
+    // Id-urile jucatorilor care AU votat deja in meeting-ul curent (populat din
+    // evenimentul "vote_cast") - NU si cu ce au votat, votul ramane secret
+    // pentru ceilalti pana la rezolvarea finala. Se goleste la fiecare meeting nou.
+    val playersWhoVoted = mutableStateListOf<String>()
+
+    // Votul PROPRIU al jucatorului local in meeting-ul curent, tinut local doar
+    // pentru feedback vizual (ex: butonul apasat ramane evidentiat) - server-ul
+    // e sursa de adevar, acest camp nu e retrimis niciodata la server. null =
+    // nu a votat inca; NONE_VOTED_SENTINEL nu exista, se foloseste un flag separat.
+    private val _myVoteTargetId = mutableStateOf<String?>(null)
+    val myVoteTargetId: State<String?> = _myVoteTargetId
+    private val _hasVoted = mutableStateOf(false)
+    val hasVoted: State<Boolean> = _hasVoted
+
+    /** Apelat cand jucatorul local voteaza un suspect, sau null pentru skip. */
+    fun castVote(targetPlayerId: String?) {
+        _myVoteTargetId.value = targetPlayerId
+        _hasVoted.value = true
+        networkClient?.sendCastVote(targetPlayerId)
+    }
+
+    // Rezultatul ultimului meeting rezolvat - ramane populat pana jucatorul
+    // apasa "Am inteles" (acknowledgeMeetingResult), ca sa aiba timp sa vada
+    // cine a fost exclus inainte sa revina pe harta.
+    private val _meetingResult = mutableStateOf<MeetingResultInfo?>(null)
+    val meetingResult: State<MeetingResultInfo?> = _meetingResult
+
+    fun acknowledgeMeetingResult() {
+        _meetingResult.value = null
+    }
 
     fun acknowledgeMeeting() {
         _activeMeeting.value = null
@@ -217,11 +263,15 @@ class GameViewModel : ViewModel() {
         _spyTaskCount.value = 5
         _gameOverWinner.value = null
         _activeMeeting.value = null
+        _meetingResult.value = null
+        _myVoteTargetId.value = null
+        _hasVoted.value = false
 
         lobbyPlayers.clear()
         playerNames.clear()
         spyTasks.clear()
         corpses.clear()
+        playersWhoVoted.clear()
         _isDead.value = false
     }
 
@@ -247,6 +297,9 @@ class GameViewModel : ViewModel() {
         _spyTaskCount.value = 5
         _gameOverWinner.value = null
         _activeMeeting.value = null
+        _meetingResult.value = null
+        _myVoteTargetId.value = null
+        _hasVoted.value = false
 
         lobbyPlayers.clear()
         playerLivePositions.clear()
@@ -254,6 +307,7 @@ class GameViewModel : ViewModel() {
         surveillanceCameraSpots.clear()
         spyTasks.clear()
         corpses.clear()
+        playersWhoVoted.clear()
         _isDead.value = false
     }
 
@@ -474,10 +528,28 @@ class GameViewModel : ViewModel() {
                 _isDead.value = true
             }
             is ServerEvent.MeetingCalled -> {
+                playersWhoVoted.clear()
+                _myVoteTargetId.value = null
+                _hasVoted.value = false
                 _activeMeeting.value = MeetingInfo(
                     reason = event.reason,
                     reporterId = event.reporterId,
-                    reporterName = event.reporterName
+                    reporterName = event.reporterName,
+                    durationSeconds = event.durationSeconds,
+                    startedAtMillis = System.currentTimeMillis()
+                )
+            }
+            is ServerEvent.VoteCast -> {
+                if (!playersWhoVoted.contains(event.voterId)) {
+                    playersWhoVoted.add(event.voterId)
+                }
+            }
+            is ServerEvent.MeetingResolved -> {
+                _activeMeeting.value = null
+                _meetingResult.value = MeetingResultInfo(
+                    ejectedPlayerId = event.ejectedPlayerId,
+                    ejectedPlayerName = event.ejectedPlayerName,
+                    wasSpy = event.wasSpy
                 )
             }
             is ServerEvent.LobbyUpdate -> {
