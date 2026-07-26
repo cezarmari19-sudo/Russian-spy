@@ -5,7 +5,7 @@ from typing import Optional
 
 from models import (
     GameRoom, GamePhase, Player, Role, RoomFunction, Room,
-    SpyTaskType, SpyTaskInstance, SPY_TASK_ALLOWED_FUNCTIONS, Corpse,
+    SpyTaskType, SpyTaskInstance, SPY_TASK_ALLOWED_FUNCTIONS, Corpse, Meeting,
 )
 
 
@@ -420,32 +420,130 @@ class GameManager:
         elapsed = (time.time() * 1000 - room.last_kill_at_millis) / 1000.0
         return max(0.0, room.kill_cooldown_seconds - elapsed)
 
-    def report_corpse(self, room_code: str, reporter_id: str, corpse_id: str) -> Optional[str]:
+    def report_corpse(self, room_code: str, reporter_id: str, corpse_id: str) -> tuple[Optional[str], Optional[Meeting]]:
         """Oricine (spion SAU agent FBI) aflat langa un corp nereportat il poate
         raporta - la fel ca la Among Us, raportarea nu are legatura cu rolul,
         oricine descopera corpul poate suna alarma. Marcheaza corpul ca
-        raportat (dispare de pe harta pentru toti) si dezvaluie identitatea
-        victimei catre toata camera. NU dezvaluie cine e ucigasul - asta ramane
-        ascuns, la fel ca inainte de raport."""
+        raportat (dispare de pe harta pentru toti), dezvaluie identitatea
+        victimei si PORNESTE un meeting: toti jucatorii vii sunt teleportati in
+        meeting_room si primesc un timp fix ca sa voteze. NU dezvaluie cine e
+        ucigasul - asta ramane ascuns, la fel ca inainte de raport.
+        Returneaza (eroare, None) daca esueaza, sau (None, meeting) daca reuseste."""
         room = self.rooms.get(room_code)
         if room is None:
-            return "Camera nu exista"
+            return "Camera nu exista", None
         if room.phase != GamePhase.IN_PROGRESS:
-            return "Jocul nu e in desfasurare"
+            return "Jocul nu e in desfasurare", None
+        if room.active_meeting is not None:
+            return "Exista deja o intalnire in desfasurare", None
 
         reporter = room.players.get(reporter_id)
         if reporter is None or not reporter.is_alive:
-            return "Doar un jucator viu poate raporta"
+            return "Doar un jucator viu poate raporta", None
 
         corpse = room.corpses.get(corpse_id)
         if corpse is None:
-            return "Corp invalid"
+            return "Corp invalid", None
         if corpse.reported:
-            return "Corpul a fost deja raportat"
+            return "Corpul a fost deja raportat", None
 
         corpse.reported = True
         corpse.reported_by = reporter_id
+
+        # Toti jucatorii VII sunt adusi in sala de intalniri - cei deja morti
+        # (corpuri neraportate inca, daca sunt mai multe) raman unde sunt.
+        for player in room.players.values():
+            if player.is_alive:
+                player.current_room_id = "meeting_room"
+
+        meeting = Meeting(
+            started_at_millis=time.time() * 1000,
+            reporter_id=reporter_id,
+            reporter_name=reporter.name,
+        )
+        room.active_meeting = meeting
+        return None, meeting
+
+    def cast_vote(self, room_code: str, voter_id: str, target_player_id: Optional[str]) -> Optional[str]:
+        """Inregistreaza votul unui jucator viu in intalnirea activa curenta.
+        target_player_id = None inseamna vot explicit de "skip" (abtinere) -
+        diferit de "nu a votat inca" (voter_id absent din dict). Un jucator
+        poate vota o singura data; un vot ulterior il suprascrie pe primul
+        (permite jucatorului sa se razgandeasca cat timp meeting-ul e activ)."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        meeting = room.active_meeting
+        if meeting is None or meeting.resolved:
+            return "Nu exista o intalnire activa"
+
+        voter = room.players.get(voter_id)
+        if voter is None or not voter.is_alive:
+            return "Doar un jucator viu poate vota"
+
+        if target_player_id is not None:
+            target = room.players.get(target_player_id)
+            if target is None or not target.is_alive:
+                return "Tinta votului e invalida"
+
+        meeting.votes[voter_id] = target_player_id
         return None
+
+    def get_meeting_remaining_seconds(self, room_code: str) -> float:
+        room = self.rooms.get(room_code)
+        if room is None or room.active_meeting is None:
+            return 0.0
+        meeting = room.active_meeting
+        elapsed = (time.time() * 1000 - meeting.started_at_millis) / 1000.0
+        return max(0.0, meeting.duration_seconds - elapsed)
+
+    def is_meeting_expired(self, room_code: str) -> bool:
+        return self.get_meeting_remaining_seconds(room_code) <= 0.0
+
+    def resolve_meeting(self, room_code: str) -> Optional[dict]:
+        """Inchide intalnirea activa si calculeaza rezultatul: jucatorul cu cele
+        mai multe voturi e exclus (is_alive = False). Majoritate SIMPLA - la
+        egalitate (inclusiv egalitate cu numarul de skip-uri), NIMENI nu e
+        exclus. Returneaza un rezumat pentru broadcast, sau None daca nu exista
+        nicio intalnire activa de rezolvat."""
+        room = self.rooms.get(room_code)
+        if room is None or room.active_meeting is None:
+            return None
+        meeting = room.active_meeting
+        if meeting.resolved:
+            return None
+        meeting.resolved = True
+
+        # Numaram voturile per tinta - "None" (skip) e o "tinta" ca oricare alta
+        # pentru scopul comparatiei de majoritate.
+        tally: dict[Optional[str], int] = {}
+        for target in meeting.votes.values():
+            tally[target] = tally.get(target, 0) + 1
+
+        ejected_player_id: Optional[str] = None
+        if tally:
+            max_votes = max(tally.values())
+            top_targets = [t for t, count in tally.items() if count == max_votes]
+            # Exact un singur "castigator" (fara egalitate) SI acela nu e skip (None).
+            if len(top_targets) == 1 and top_targets[0] is not None:
+                ejected_player_id = top_targets[0]
+
+        was_spy = False
+        if ejected_player_id is not None:
+            ejected_player = room.players.get(ejected_player_id)
+            if ejected_player is not None:
+                ejected_player.is_alive = False
+                was_spy = ejected_player.role == Role.RUSSIAN_SPY
+                if was_spy:
+                    room.phase = GamePhase.FBI_WON
+
+        room.active_meeting = None
+
+        return {
+            "ejectedPlayerId": ejected_player_id,
+            "wasSpy": was_spy,
+            "voteCounts": {(k if k is not None else "SKIP"): v for k, v in tally.items()},
+        }
 
     def check_spy_win(self, room_code: str) -> bool:
         """True daca toate task-urile spionului sunt completate ACUM (nu au fost
