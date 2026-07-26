@@ -2,8 +2,11 @@ package com.astran.russianspy.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -32,10 +35,12 @@ import com.astran.russianspy.model.Role
 import com.astran.russianspy.model.Room
 import com.astran.russianspy.model.RoomFunction
 import com.astran.russianspy.model.SpyTaskCatalog
+import com.astran.russianspy.network.LobbyPlayerInfo
 import com.astran.russianspy.network.SpyTaskInfo
 import com.astran.russianspy.network.CorpseInfo
 import com.astran.russianspy.ui.tasks.HoldToCompleteTaskDialog
 import com.astran.russianspy.viewmodel.GameViewModel
+import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -99,7 +104,11 @@ fun GameCanvasScreen(
         var frameCounter = 0
         while (true) {
             withFrameNanos { }
-            if (!viewModel.isDead.value && (joystickDirX != 0f || joystickDirY != 0f)) {
+            // Miscarea e blocata si cat timp esti mort SI cat timp exista un
+            // meeting activ (jucatorii stau pe loc in meeting_room, ca la Among Us).
+            if (!viewModel.isDead.value && viewModel.activeMeeting.value == null &&
+                (joystickDirX != 0f || joystickDirY != 0f)
+            ) {
                 val newX = playerX + joystickDirX * playerSpeed
                 val newY = playerY + joystickDirY * playerSpeed
                 if (isWalkable(newX, playerY, playerRadius)) playerX = newX
@@ -139,7 +148,7 @@ fun GameCanvasScreen(
                     },
                     onDrag = { change, _ ->
                         change.consume()
-                        if (viewModel.isDead.value) return@detectDragGestures
+                        if (viewModel.isDead.value || viewModel.activeMeeting.value != null) return@detectDragGestures
                         val origin = joystickOrigin ?: return@detectDragGestures
                         val rawOffset = change.position - origin
                         val distance = sqrt(rawOffset.x * rawOffset.x + rawOffset.y * rawOffset.y)
@@ -423,7 +432,7 @@ fun GameCanvasScreen(
             playerY - BuildingLayout.SURVEILLANCE_MONITOR_Y
         )
         val isNearMonitor = distToMonitor <= BuildingLayout.MONITOR_INTERACT_RADIUS
-        if (isNearMonitor) {
+        if (isNearMonitor && viewModel.activeMeeting.value == null) {
             Button(
                 onClick = onOpenSurveillanceMonitors,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
@@ -439,9 +448,10 @@ fun GameCanvasScreen(
         // Butonul de omor - vizibil DOAR spionului, DOAR cand exact un singur
         // agent FBI viu e in raza de interactiune SI nimeni altcineva viu nu e
         // in aceeasi camera (fara martori) - server-side se revalideaza totul,
-        // dar verificam si local ca butonul sa nu apara inutil/inselator.
+        // dar verificam si local ca butonul sa nu apara inutil/inselator. Nu
+        // apare in timpul unui meeting (toti stau in meeting_room, oricum).
         val myRole = viewModel.myRole.value
-        if (myRole == Role.RUSSIAN_SPY) {
+        if (myRole == Role.RUSSIAN_SPY && viewModel.activeMeeting.value == null) {
             val myRoomId = currentRoomIdLocal
             val playersInRoom = viewModel.playerLivePositions.entries.filter { (pid, pos) ->
                 pid != viewModel.localPlayerId.value && pos.roomId == myRoomId
@@ -485,15 +495,15 @@ fun GameCanvasScreen(
         }
 
         // Buton "Raporteaza corpul" - vizibil pentru ORICE rol (spion SAU agent
-        // FBI), DOAR cand jucatorul e langa un corp inca nereportat. La fel ca
-        // la Among Us, oricine gaseste corpul poate suna alarma, indiferent de
-        // rol. Pozitionat central-jos, deasupra butonului de task, ca sa nu se
-        // suprapuna vizual cu el (ambele pot fi vizibile teoretic in acelasi timp).
+        // FBI), DOAR cand jucatorul e langa un corp inca nereportat SI nu exista
+        // deja un meeting activ (nu poti raporta un al doilea corp in timp ce
+        // se voteaza pentru primul). La fel ca la Among Us, oricine gaseste
+        // corpul poate suna alarma, indiferent de rol.
         val nearbyCorpse: CorpseInfo? = viewModel.corpses.firstOrNull { corpse ->
             !corpse.reported &&
                 kotlin.math.hypot(playerX - corpse.x, playerY - corpse.y) <= REPORT_INTERACT_RADIUS
         }
-        if (nearbyCorpse != null && activeTaskDialog == null) {
+        if (nearbyCorpse != null && activeTaskDialog == null && viewModel.activeMeeting.value == null) {
             Button(
                 onClick = { viewModel.reportCorpse(nearbyCorpse.id) },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E)),
@@ -512,16 +522,19 @@ fun GameCanvasScreen(
         // Un spion vede DOAR task-urile lui neterminate; un agent FBI vede DOAR
         // dispozitivele deja plasate (PLANT_LISTENING_DEVICE / HACK_SURVEILLANCE_CAMERA
         // completate) - task-urile spionului raman complet invizibile agentilor.
-        val nearbyTask: SpyTaskInfo? = viewModel.spyTasks.firstOrNull { task ->
-            val dist = kotlin.math.hypot(playerX - task.x, playerY - task.y)
-            if (dist > TASK_INTERACT_RADIUS) return@firstOrNull false
-            val meta = SpyTaskCatalog.get(task.taskType)
-            when (myRole) {
-                Role.RUSSIAN_SPY -> !task.isCompleted
-                Role.FBI_AGENT -> task.isCompleted && meta.canBeDisabledByFbi
-                else -> false
+        // Nu apare in timpul unui meeting.
+        val nearbyTask: SpyTaskInfo? = if (viewModel.activeMeeting.value == null) {
+            viewModel.spyTasks.firstOrNull { task ->
+                val dist = kotlin.math.hypot(playerX - task.x, playerY - task.y)
+                if (dist > TASK_INTERACT_RADIUS) return@firstOrNull false
+                val meta = SpyTaskCatalog.get(task.taskType)
+                when (myRole) {
+                    Role.RUSSIAN_SPY -> !task.isCompleted
+                    Role.FBI_AGENT -> task.isCompleted && meta.canBeDisabledByFbi
+                    else -> false
+                }
             }
-        }
+        } else null
 
         if (nearbyTask != null && activeTaskDialog == null) {
             val isDisableAction = myRole == Role.FBI_AGENT
@@ -595,26 +608,155 @@ fun GameCanvasScreen(
             }
         }
 
-        // Notificare simpla de "s-a chemat un meeting" (raport de corp) - doar
-        // un dialog informativ deocamdata; logica completa de vot/aducere in
-        // meeting_room vine intr-o etapa ulterioara.
+        // Ecranul COMPLET de meeting (raport de corp): cronometru live, lista
+        // jucatorilor vii cu buton de vot pentru fiecare, buton de skip, si
+        // indicatorul "X din Y au votat". Acopera tot ecranul cat timp e activ
+        // (miscarea e deja blocata mai sus). Nu se afiseaza daca esti mort -
+        // un jucator mort nu participa la vot (dar tot vede rezultatul final,
+        // afisat separat mai jos, ca sa stie ce s-a intamplat).
         viewModel.activeMeeting.value?.let { meeting ->
+            if (!viewModel.isDead.value) {
+                MeetingVoteScreen(viewModel = viewModel, meeting = meeting)
+            }
+        }
+
+        // Rezultatul ultimului meeting rezolvat - afisat TUTUROR (inclusiv
+        // jucatorilor morti), ca sa stie cine a fost exclus si daca era spionul.
+        viewModel.meetingResult.value?.let { result ->
             AlertDialog(
-                onDismissRequest = { viewModel.acknowledgeMeeting() },
+                onDismissRequest = { viewModel.acknowledgeMeetingResult() },
                 containerColor = Color(0xFF1A1D22),
-                title = { Text("Intalnire de urgenta", color = Color.White) },
+                title = { Text("Rezultatul votului", color = Color.White) },
                 text = {
                     Text(
-                        "${meeting.reporterName} a raportat un corp gasit in cladire.",
+                        text = if (result.ejectedPlayerId == null) {
+                            "Nimeni nu a fost exclus (egalitate de voturi)."
+                        } else {
+                            val suffix = if (result.wasSpy) " Era spionul!" else " Nu era spionul."
+                            "${result.ejectedPlayerName ?: "Un jucator"} a fost exclus.$suffix"
+                        },
                         color = Color(0xFFCCCCCC)
                     )
                 },
                 confirmButton = {
-                    TextButton(onClick = { viewModel.acknowledgeMeeting() }) {
+                    TextButton(onClick = { viewModel.acknowledgeMeetingResult() }) {
                         Text("Am inteles", color = Color.White)
                     }
                 }
             )
+        }
+    }
+}
+
+/**
+ * Ecranul de vot al unui meeting activ - cronometru numarat invers (calculat
+ * local din startedAtMillis + durationSeconds, actualizat la fiecare secunda),
+ * lista jucatorilor vii (fara jucatorul local) cu buton de vot pentru fiecare,
+ * un buton separat de "Skip" (abtinere explicita), si indicatorul de progres
+ * "X din Y au votat". Votul e trimis imediat la apasare (nu exista un buton
+ * separat de "confirma") - apasarea din nou pe alt jucator schimba votul.
+ */
+@Composable
+private fun MeetingVoteScreen(
+    viewModel: GameViewModel,
+    meeting: com.astran.russianspy.viewmodel.MeetingInfo
+) {
+    var remainingSeconds by remember { mutableStateOf(meeting.durationSeconds) }
+
+    LaunchedEffect(meeting.startedAtMillis) {
+        while (true) {
+            val elapsedSeconds = (System.currentTimeMillis() - meeting.startedAtMillis) / 1000f
+            remainingSeconds = (meeting.durationSeconds - elapsedSeconds).coerceAtLeast(0f)
+            if (remainingSeconds <= 0f) break
+            delay(250L)
+        }
+    }
+
+    // Lista jucatorilor vii, EXCLUZAND jucatorul local (nu are sens sa te
+    // votezi pe tine insuti ca "suspect", iar skip acopera si acest caz).
+    val alivePlayers: List<LobbyPlayerInfo> = viewModel.lobbyPlayers.filter {
+        it.id != viewModel.localPlayerId.value && it.connected
+    }
+    val totalVoters = viewModel.lobbyPlayers.count { it.connected }
+    val votedCount = viewModel.playersWhoVoted.size
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xE60B0D10)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.85f),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("📢 Intalnire de urgenta", color = Color.White, fontSize = 20.sp)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "${meeting.reporterName} a raportat un corp gasit in cladire.",
+                color = Color(0xFFCCCCCC),
+                fontSize = 13.sp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Timp ramas: ${remainingSeconds.toInt()}s",
+                color = if (remainingSeconds <= 10f) Color(0xFFE53935) else Color.White,
+                fontSize = 16.sp
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "$votedCount din $totalVoters au votat",
+                color = Color(0xFF999999),
+                fontSize = 12.sp
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(alivePlayers) { player ->
+                    val isSelected = viewModel.hasVoted.value && viewModel.myVoteTargetId.value == player.id
+                    Button(
+                        onClick = { viewModel.castVote(player.id) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isSelected) Color(0xFFB3261E) else Color(0xFF2A2F38)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (isSelected) Modifier.border(2.dp, Color.White, RoundedCornerShape(12.dp))
+                                else Modifier
+                            )
+                    ) {
+                        Text(player.name, color = Color.White)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val isSkipSelected = viewModel.hasVoted.value && viewModel.myVoteTargetId.value == null
+            Button(
+                onClick = { viewModel.castVote(null) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isSkipSelected) Color(0xFF555555) else Color(0xFF3A3A3A)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (isSkipSelected) Modifier.border(2.dp, Color.White, RoundedCornerShape(12.dp))
+                        else Modifier
+                    )
+            ) {
+                Text("Abtinere (Skip)", color = Color.White)
+            }
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
