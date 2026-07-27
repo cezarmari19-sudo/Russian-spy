@@ -63,7 +63,10 @@ async def broadcast_lobby_update(room_code: str):
     # meeting (fara asta, jucatorii morti apareau in numaratoarea "X din Y au
     # votat" desi nu pot vota niciodata, si votul parea mereu "incomplet").
     players_payload = [
-        {"id": p.id, "name": p.name, "connected": p.connected, "isAlive": p.is_alive}
+        {
+            "id": p.id, "name": p.name, "connected": p.connected,
+            "isAlive": p.is_alive, "color": p.color,
+        }
         for p in room.players.values()
     ]
     await broadcast_to_room(room_code, {
@@ -248,6 +251,17 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         "type": "surveillance_cameras_assigned",
                         "spots": room.surveillance_cameras
                     })
+                    # Arhiva de ADN e populata automat (o mostra de referinta
+                    # per jucator) - trimitem lista catre toti, clientul o
+                    # afiseaza in camera DNA_ARCHIVE ca niste sloturi colorate,
+                    # fara nume/rol asociat (vezi DnaSample.to_dict).
+                    await broadcast_to_room(room_code, {
+                        "type": "dna_archive_ready",
+                        "samples": [
+                            s.to_dict() for s in room.dna_samples.values()
+                            if s.is_reference
+                        ]
+                    })
                     # Trimitem si lista de jucatori actualizata (isAlive=True
                     # pentru toti, roluri resetate) - ca ecranele care depind
                     # de lobbyPlayers sa porneasca de la o stare corecta.
@@ -412,6 +426,79 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         if room_code not in _meeting_watchers:
                             _meeting_watchers.add(room_code)
                             asyncio.create_task(_meeting_watcher(room_code))
+
+            elif action == "tamper_corpse_dna":
+                # Doar spionul, doar pe un corp aflat in Morga si inca
+                # neextras - vezi validarile complete in game_manager.
+                corpse_id = data.get("corpseId", "")
+                error = game_manager.tamper_corpse_dna(room_code, player_id, corpse_id)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    # Nu dezvaluim noul dna_completeness catre restul camerei
+                    # (ar da de gol ca s-a intamplat ceva suspect si CINE a
+                    # facut-o) - doar confirmam actiunea catre autor.
+                    await websocket.send_text(json.dumps({
+                        "type": "corpse_dna_tampered",
+                        "corpseId": corpse_id,
+                    }))
+
+            elif action == "extract_corpse_dna":
+                corpse_id = data.get("corpseId", "")
+                room = game_manager.get_room(room_code)
+                error, sample = game_manager.extract_corpse_dna(room_code, player_id, corpse_id)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    corpse = room.corpses.get(corpse_id) if room else None
+                    # Anuntam toata camera ca mostra a fost recoltata (corpul
+                    # ramane in morga, dar acum arata "ADN extras") - completeness-ul
+                    # devine vizibil abia acum (to_dict ascunde valoarea pana
+                    # la extractie).
+                    await broadcast_to_room(room_code, {
+                        "type": "corpse_dna_extracted",
+                        "corpse": corpse.to_dict(reveal_killer=False) if corpse else None,
+                        "sample": sample.to_dict() if sample else None,
+                    })
+
+            elif action == "move_dna_sample_to_lab":
+                sample_id = data.get("sampleId", "")
+                error = game_manager.move_dna_sample_to_lab(room_code, player_id, sample_id)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    room = game_manager.get_room(room_code)
+                    sample = room.dna_samples.get(sample_id) if room else None
+                    await broadcast_to_room(room_code, {
+                        "type": "dna_sample_moved",
+                        "sample": sample.to_dict() if sample else None,
+                    })
+
+            elif action == "place_sample_in_lab_machine":
+                sample_id = data.get("sampleId", "")
+                error = game_manager.place_sample_in_lab_machine(room_code, player_id, sample_id)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    room = game_manager.get_room(room_code)
+                    if room is not None:
+                        await broadcast_to_room(room_code, {
+                            "type": "lab_machine_updated",
+                            "harvestedSampleId": room.lab_machine_harvested_sample_id,
+                            "referenceSampleId": room.lab_machine_reference_sample_id,
+                        })
+
+            elif action == "compare_dna_samples":
+                error, result = game_manager.compare_dna_samples(room_code, player_id)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    # Rezultatul e STRICT privat - trimis doar autorului actiunii,
+                    # niciodata broadcastat catre restul camerei.
+                    await websocket.send_text(json.dumps({
+                        "type": "dna_comparison_result",
+                        "result": result.to_dict() if result else None,
+                    }))
 
             elif action == "cast_vote":
                 # targetPlayerId absent sau null in JSON => vot de "skip" (None).
