@@ -73,12 +73,47 @@ async def broadcast_lobby_update(room_code: str):
     })
 
 
+async def _resolve_and_broadcast_meeting(room_code: str):
+    """Rezolva intalnirea activa curenta (daca exista) si trimite rezultatul la
+    toata camera. Extrasa separat ca sa poata fi apelata din DOUA locuri:
+    1) watcher-ul de fundal, cand expira cronometrul de vot
+    2) handler-ul de cast_vote, INSTANT, cand ultimul jucator viu voteaza -
+       fara sa mai astepte tick-ul urmator din watcher (pana la 1s intarziere)
+    Nu face nimic daca nu exista un meeting activ sau daca a fost deja rezolvat
+    (resolve_meeting e idempotent din perspectiva asta - a doua chemare
+    returneaza None)."""
+    result = game_manager.resolve_meeting(room_code)
+    if result is None:
+        return
+
+    room = game_manager.get_room(room_code)
+    ejected_id = result["ejectedPlayerId"]
+    ejected_name = room.players[ejected_id].name if (room and ejected_id and ejected_id in room.players) else None
+
+    await broadcast_to_room(room_code, {
+        "type": "meeting_resolved",
+        "ejectedPlayerId": ejected_id,
+        "ejectedPlayerName": ejected_name,
+        "wasSpy": result["wasSpy"],
+    })
+
+    # Cineva tocmai a devenit "mort" (daca ejected_id nu e None) - retrimitem
+    # lista de jucatori actualizata, ca isAlive sa fie corect pe client
+    # inainte de urmatorul meeting eventual.
+    await broadcast_lobby_update(room_code)
+
+    if result["wasSpy"]:
+        await broadcast_to_room(room_code, {"type": "game_over", "winner": "FBI_AGENT"})
+
+
 async def _meeting_watcher(room_code: str):
     """Task de fundal pornit la fiecare meeting nou: asteapta pana expira
-    timpul de vot (sau pana meeting-ul e deja rezolvat manual, caz care nu
-    exista inca dar ramane robust pentru viitor), apoi rezolva automat
-    rezultatul si il trimite la toata camera. O singura instanta ruleaza per
-    camera odata (vezi _meeting_watchers)."""
+    timpul de vot SAU pana toti jucatorii vii au votat deja (verificat la
+    fiecare tick de 1s), apoi rezolva rezultatul si il trimite la toata
+    camera. Daca toti voteaza inainte de expirare, cast_vote rezolva deja
+    INSTANT (vezi handler-ul de mai jos) - acest watcher gaseste meeting-ul
+    deja rezolvat in acel caz si iese fara sa faca nimic (resolve_meeting e
+    idempotent). O singura instanta ruleaza per camera odata."""
     try:
         while True:
             room = game_manager.get_room(room_code)
@@ -88,28 +123,7 @@ async def _meeting_watcher(room_code: str):
                 break
             await asyncio.sleep(1.0)
 
-        result = game_manager.resolve_meeting(room_code)
-        if result is None:
-            return
-
-        room = game_manager.get_room(room_code)
-        ejected_id = result["ejectedPlayerId"]
-        ejected_name = room.players[ejected_id].name if (room and ejected_id and ejected_id in room.players) else None
-
-        await broadcast_to_room(room_code, {
-            "type": "meeting_resolved",
-            "ejectedPlayerId": ejected_id,
-            "ejectedPlayerName": ejected_name,
-            "wasSpy": result["wasSpy"],
-        })
-
-        # Cineva tocmai a devenit "mort" (daca ejected_id nu e None) - retrimitem
-        # lista de jucatori actualizata, ca isAlive sa fie corect pe client
-        # inainte de urmatorul meeting eventual.
-        await broadcast_lobby_update(room_code)
-
-        if result["wasSpy"]:
-            await broadcast_to_room(room_code, {"type": "game_over", "winner": "FBI_AGENT"})
+        await _resolve_and_broadcast_meeting(room_code)
     finally:
         _meeting_watchers.discard(room_code)
 
@@ -388,6 +402,11 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         # inainte de meeting, ca ecranul de vot sa numere corect
                         # din start cine e viu si cine nu.
                         await broadcast_lobby_update(room_code)
+                        # Cazul particular: daca exista un SINGUR jucator viu
+                        # (raportorul insusi), ar putea vota instant si sa
+                        # rezolve meeting-ul chiar inainte ca watcher-ul sa
+                        # apuce sa porneasca - nu e o problema, cast_vote de mai
+                        # jos gestioneaza si acest caz corect (idempotent).
                         # Pornim watcher-ul de fundal care va rezolva automat
                         # votul la expirarea timpului, chiar daca nu toti au votat.
                         if room_code not in _meeting_watchers:
@@ -408,6 +427,13 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         "type": "vote_cast",
                         "voterId": player_id
                     })
+                    # Rezolvare INSTANT daca acesta a fost ultimul vot necesar -
+                    # nu mai asteptam pana la 1s (tick-ul watcher-ului) sau pana
+                    # expira cronometrul intreg. resolve_meeting e idempotent,
+                    # deci nu exista risc de dubla rezolvare daca watcher-ul
+                    # ajunge sa verifice chiar in acelasi moment.
+                    if game_manager.all_alive_players_voted(room_code):
+                        await _resolve_and_broadcast_meeting(room_code)
 
             elif action == "delete_room":
                 error = game_manager.delete_room(room_code, player_id)
