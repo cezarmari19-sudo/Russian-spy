@@ -489,6 +489,27 @@ class GameManager:
         meeting.votes[voter_id] = target_player_id
         return None
 
+    def all_alive_players_voted(self, room_code: str) -> bool:
+        """True daca FIECARE jucator viu conectat a votat deja (inclusiv cu
+        skip) in intalnirea activa curenta - folosit ca sa rezolvam votul
+        INSTANT quando ultimul jucator viu voteaza, fara sa mai asteptam
+        expirarea cronometrului. Daca nu exista niciun meeting activ, returneaza
+        False (nimic de rezolvat)."""
+        room = self.rooms.get(room_code)
+        if room is None or room.active_meeting is None:
+            return False
+        meeting = room.active_meeting
+        if meeting.resolved:
+            return False
+
+        alive_player_ids = {
+            p.id for p in room.players.values()
+            if p.is_alive and p.connected
+        }
+        if not alive_player_ids:
+            return False
+        return alive_player_ids.issubset(meeting.votes.keys())
+
     def get_meeting_remaining_seconds(self, room_code: str) -> float:
         room = self.rooms.get(room_code)
         if room is None or room.active_meeting is None:
