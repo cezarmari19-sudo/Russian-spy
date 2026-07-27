@@ -45,6 +45,20 @@ sealed class ServerEvent {
         val wasSpy: Boolean
     ) : ServerEvent()
     data class Error(val message: String) : ServerEvent()
+
+    // --- Morga si ADN ---
+    /** Arhiva de ADN populata automat la inceputul rundei - o mostra de referinta per jucator. */
+    data class DnaArchiveReady(val samples: List<DnaSampleInfo>) : ServerEvent()
+    /** Confirmare privata catre spion ca a stricat proba de pe un corp (nu se afla restul camerei). */
+    data class CorpseDnaTampered(val corpseId: String) : ServerEvent()
+    /** ADN-ul unui corp din morga a fost extras - corpul + noua mostra recoltata. */
+    data class CorpseDnaExtracted(val corpse: CorpseInfo, val sample: DnaSampleInfo?) : ServerEvent()
+    /** O mostra (recoltata sau de referinta) a fost mutata intr-o alta camera (de regula spre laborator). */
+    data class DnaSampleMoved(val sample: DnaSampleInfo?) : ServerEvent()
+    /** Starea celor doua sloturi ale masinii de comparare din laborator s-a schimbat. */
+    data class LabMachineUpdated(val harvestedSampleId: String?, val referenceSampleId: String?) : ServerEvent()
+    /** Rezultatul compararii ADN - trimis STRICT catre cel care a facut comparatia. */
+    data class DnaComparisonResultEvent(val result: DnaComparisonResultInfo?) : ServerEvent()
 }
 
 /** Un task alocat spionului: tip, camera + punct exact x/y unde trebuie facut, si daca e completat acum. */
@@ -59,7 +73,8 @@ data class SpyTaskInfo(
 
 /** Un corp gasit pe harta (agent FBI omorat de spion). killerId nu e trimis de
  * server decat dupa raport/analiza ADN, deci ramane mereu null pentru clienti
- * inainte de acel moment. */
+ * inainte de acel moment. dnaCompleteness ramane null pana la extractie
+ * (in_morgue + dnaExtracted marcheaza progresul prin morga). */
 data class CorpseInfo(
     val id: String,
     val victimId: String,
@@ -67,17 +82,50 @@ data class CorpseInfo(
     val x: Float,
     val y: Float,
     val dnaRecovered: Boolean,
-    val reported: Boolean
+    val reported: Boolean,
+    val inMorgue: Boolean = false,
+    val dnaExtracted: Boolean = false,
+    val dnaCompleteness: Int? = null
 )
 
 /** isAlive e ESENTIAL pentru ecranul de vot din meeting - fara el, jucatorii
  * morti apareau in numaratoarea "X din Y au votat" desi nu pot vota niciodata,
- * facand votul sa para mereu "incomplet" pentru cei vii. */
+ * facand votul sa para mereu "incomplet" pentru cei vii. `color` identifica
+ * vizual jucatorul (stil Among Us) - folosit in special la mostrele din
+ * Arhiva ADN, unde numele/rolul raman ascunse. */
 data class LobbyPlayerInfo(
     val id: String,
     val name: String,
     val connected: Boolean,
-    val isAlive: Boolean = true
+    val isAlive: Boolean = true,
+    val color: String = "#9E9E9E"
+)
+
+/** O mostra de ADN. isReference=true => mostra de referinta din Arhiva ADN
+ * (100% completeness, nedistructibila, afisata doar cu playerColor). 
+ * isReference=false => mostra RECOLTATA de pe un corp (sourceCorpseId),
+ * cu completeness variabil (poate fi redus de spion inainte de extractie). */
+data class DnaSampleInfo(
+    val id: String,
+    val roomId: String,
+    val completeness: Int,
+    val isAnalyzed: Boolean,
+    val isReference: Boolean,
+    val playerColor: String,
+    val sourceCorpseId: String?,
+    val placedInLabSlot: Boolean
+)
+
+/** Rezultatul unei comparari la masina din laborator - vizibil STRICT pentru
+ * cel care a facut comparatia. similarityPercent scade daca mostra recoltata
+ * a fost stricata de spion, chiar daca apartine cu adevarat aceleiasi
+ * persoane ca mostra de referinta. */
+data class DnaComparisonResultInfo(
+    val harvestedSampleId: String,
+    val referenceSampleId: String,
+    val referencePlayerColor: String,
+    val similarityPercent: Int,
+    val isMatch: Boolean
 )
 
 data class PlayerPositionInfo(
@@ -290,7 +338,8 @@ class NetworkClient(
                         id = p.getString("id"),
                         name = p.getString("name"),
                         connected = p.optBoolean("connected", true),
-                        isAlive = p.optBoolean("isAlive", true)
+                        isAlive = p.optBoolean("isAlive", true),
+                        color = p.optString("color", "#9E9E9E")
                     )
                 }
                 onEvent(ServerEvent.LobbyUpdate(players, hostId = json.optString("hostId", "")))
@@ -338,19 +387,7 @@ class NetworkClient(
             )
             "corpse_found" -> {
                 val c = json.getJSONObject("corpse")
-                onEvent(
-                    ServerEvent.CorpseFound(
-                        CorpseInfo(
-                            id = c.getString("id"),
-                            victimId = c.getString("victimId"),
-                            roomId = c.getString("roomId"),
-                            x = c.getDouble("x").toFloat(),
-                            y = c.getDouble("y").toFloat(),
-                            dnaRecovered = c.optBoolean("dnaRecovered", false),
-                            reported = c.optBoolean("reported", false)
-                        )
-                    )
-                )
+                onEvent(ServerEvent.CorpseFound(parseCorpse(c)))
             }
             "you_were_killed" -> onEvent(ServerEvent.YouWereKilled)
             "meeting_called" -> onEvent(
@@ -371,8 +408,73 @@ class NetworkClient(
                     wasSpy = json.optBoolean("wasSpy", false)
                 )
             )
+            "dna_archive_ready" -> {
+                val arr = json.getJSONArray("samples")
+                val list = (0 until arr.length()).map { i -> parseDnaSample(arr.getJSONObject(i)) }
+                onEvent(ServerEvent.DnaArchiveReady(list))
+            }
+            "corpse_dna_tampered" -> onEvent(
+                ServerEvent.CorpseDnaTampered(corpseId = json.getString("corpseId"))
+            )
+            "corpse_dna_extracted" -> {
+                val c = json.optJSONObject("corpse")
+                if (c != null) {
+                    val s = json.optJSONObject("sample")
+                    onEvent(ServerEvent.CorpseDnaExtracted(parseCorpse(c), s?.let { parseDnaSample(it) }))
+                }
+            }
+            "dna_sample_moved" -> {
+                val s = json.optJSONObject("sample")
+                onEvent(ServerEvent.DnaSampleMoved(s?.let { parseDnaSample(it) }))
+            }
+            "lab_machine_updated" -> onEvent(
+                ServerEvent.LabMachineUpdated(
+                    harvestedSampleId = if (json.isNull("harvestedSampleId")) null else json.optString("harvestedSampleId", null),
+                    referenceSampleId = if (json.isNull("referenceSampleId")) null else json.optString("referenceSampleId", null)
+                )
+            )
+            "dna_comparison_result" -> {
+                val r = json.optJSONObject("result")
+                onEvent(
+                    ServerEvent.DnaComparisonResultEvent(
+                        r?.let {
+                            DnaComparisonResultInfo(
+                                harvestedSampleId = it.getString("harvestedSampleId"),
+                                referenceSampleId = it.getString("referenceSampleId"),
+                                referencePlayerColor = it.optString("referencePlayerColor", "#9E9E9E"),
+                                similarityPercent = it.getInt("similarityPercent"),
+                                isMatch = it.getBoolean("isMatch")
+                            )
+                        }
+                    )
+                )
+            }
         }
     }
+
+    private fun parseCorpse(c: JSONObject): CorpseInfo = CorpseInfo(
+        id = c.getString("id"),
+        victimId = c.getString("victimId"),
+        roomId = c.getString("roomId"),
+        x = c.getDouble("x").toFloat(),
+        y = c.getDouble("y").toFloat(),
+        dnaRecovered = c.optBoolean("dnaRecovered", false),
+        reported = c.optBoolean("reported", false),
+        inMorgue = c.optBoolean("inMorgue", false),
+        dnaExtracted = c.optBoolean("dnaExtracted", false),
+        dnaCompleteness = if (c.isNull("dnaCompleteness")) null else c.optInt("dnaCompleteness")
+    )
+
+    private fun parseDnaSample(s: JSONObject): DnaSampleInfo = DnaSampleInfo(
+        id = s.getString("id"),
+        roomId = s.getString("roomId"),
+        completeness = s.getInt("completeness"),
+        isAnalyzed = s.optBoolean("isAnalyzed", false),
+        isReference = s.optBoolean("isReference", false),
+        playerColor = s.optString("playerColor", "#9E9E9E"),
+        sourceCorpseId = if (s.isNull("sourceCorpseId")) null else s.optString("sourceCorpseId", null),
+        placedInLabSlot = s.optBoolean("placedInLabSlot", false)
+    )
 
     fun sendMove(targetRoomId: String) {
         send(JSONObject().apply {
@@ -461,6 +563,53 @@ class NetworkClient(
         send(JSONObject().apply {
             put("action", "report_corpse")
             put("corpseId", corpseId)
+        })
+    }
+
+    /** Doar spionul, doar pe un corp aflat in Morga si inca neextras - strica
+     * ADN-ul (completeness scade random intre 0 si 30%). Serverul valideaza
+     * totul; clientul doar trimite intentia. */
+    fun sendTamperCorpseDna(corpseId: String) {
+        send(JSONObject().apply {
+            put("action", "tamper_corpse_dna")
+            put("corpseId", corpseId)
+        })
+    }
+
+    /** Apelat de orice jucator viu aflat in Morga langa un corp raportat, ca
+     * sa ii extraga ADN-ul o singura data (rezulta o DnaSample recoltata). */
+    fun sendExtractCorpseDna(corpseId: String) {
+        send(JSONObject().apply {
+            put("action", "extract_corpse_dna")
+            put("corpseId", corpseId)
+        })
+    }
+
+    /** Muta o mostra (din morga sau din arhiva ADN) in Laboratorul
+     * Criminalistic - jucatorul trebuie sa fie fizic in camera unde se afla
+     * mostra in prezent. */
+    fun sendMoveDnaSampleToLab(sampleId: String) {
+        send(JSONObject().apply {
+            put("action", "move_dna_sample_to_lab")
+            put("sampleId", sampleId)
+        })
+    }
+
+    /** Pune o mostra deja adusa in laborator intr-unul din cele doua sloturi
+     * ale masinii de comparare (recoltat vs. referinta, decis automat de
+     * server dupa tipul mostrei). */
+    fun sendPlaceSampleInLabMachine(sampleId: String) {
+        send(JSONObject().apply {
+            put("action", "place_sample_in_lab_machine")
+            put("sampleId", sampleId)
+        })
+    }
+
+    /** Ruleaza compararea masinii din laborator - necesita ambele sloturi
+     * ocupate. Rezultatul vine STRICT catre cel care a cerut comparatia. */
+    fun sendCompareDnaSamples() {
+        send(JSONObject().apply {
+            put("action", "compare_dna_samples")
         })
     }
 
