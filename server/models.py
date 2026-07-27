@@ -18,6 +18,8 @@ class RoomFunction(str, Enum):
     OFFICE = "OFFICE"
     BREAK_ROOM = "BREAK_ROOM"
     ENTRANCE = "ENTRANCE"
+    MORGUE = "MORGUE"
+    DNA_ARCHIVE = "DNA_ARCHIVE"
 
 
 class GamePhase(str, Enum):
@@ -109,6 +111,10 @@ class Player:
     # fost trimis la conectare. Folosit STRICT pentru sistemul de ban - fara el,
     # un ban ar tine minte doar playerId-ul efemer si ar fi inutil.
     account_id: Optional[str] = None
+    # Culoare stabila, unica in cadrul partidei (hex, ex. "#E53935"), asignata
+    # la intrarea in lobby - stil Among Us. Folosita ca sa identificam vizual
+    # mostrele de ADN de referinta fara sa dezvaluim numele/rolul jucatorului.
+    color: str = "#9E9E9E"
 
     def to_dict(self, reveal_role: bool = False):
         return {
@@ -118,6 +124,7 @@ class Player:
             "isAlive": self.is_alive,
             "currentRoomId": self.current_room_id,
             "connected": self.connected,
+            "color": self.color,
         }
 
 
@@ -149,6 +156,21 @@ class Room:
 
 @dataclass
 class DnaSample:
+    """O mostra de ADN. Doua tipuri, distinse de `is_reference`:
+
+    - Mostre de REFERINTA (is_reference=True): una per jucator din partida,
+      generate automat la start_game() in camera DNA_ARCHIVE (arhiva de ADN).
+      Nu apartin niciunui eveniment - reprezinta pur si simplu ADN-ul acelui
+      jucator, la 100% completeness, si NU pot fi niciodata stricate/alterate
+      (arhiva e pastrata in conditii sterile - "in camera unde e pastrat ADN
+      nu poate fi stricat"). Clientii vad DOAR culoarea playerului asociat
+      (player_color), niciodata numele/rolul, ca sa nu dea de gol spionul
+      inainte de comparare.
+    - Mostre RECOLTATE (is_reference=False): rezultatul extragerii de ADN de
+      pe un cadavru din Morgue. Legate de un corpse_id, cu completeness variabil
+      (vezi Corpse.dna_completeness) care POATE fi redus de spion inainte de
+      extragere (tamper_corpse_dna in game_manager).
+    """
     id: str
     room_id: str
     actual_owner_id: str
@@ -156,6 +178,10 @@ class DnaSample:
     completeness: int
     is_analyzed: bool = False
     was_tampered_with: bool = False
+    is_reference: bool = False
+    player_color: str = ""
+    source_corpse_id: Optional[str] = None
+    placed_in_lab_slot: bool = False
 
     def is_reliable(self) -> bool:
         return self.completeness >= 70
@@ -164,9 +190,35 @@ class DnaSample:
         return {
             "id": self.id,
             "roomId": self.room_id,
-            "displayedOwnerId": self.displayed_owner_id,
             "completeness": self.completeness,
             "isAnalyzed": self.is_analyzed,
+            "isReference": self.is_reference,
+            "playerColor": self.player_color,
+            "sourceCorpseId": self.source_corpse_id,
+            "placedInLabSlot": self.placed_in_lab_slot,
+        }
+
+
+@dataclass
+class DnaComparisonResult:
+    """Rezultatul unei comparari facute la masina din Laboratorul Criminalistic:
+    o mostra recoltata (de pe un cadavru) vs. o mostra de referinta (din arhiva).
+    Similarity scade odata cu completeness-ul mostrei recoltate - o mostra
+    stricata de spion da un rezultat mai putin sigur/mai putin clar. Vizibil
+    STRICT pentru cel care a facut compararea (nu se broadcasteaza in camera)."""
+    harvested_sample_id: str
+    reference_sample_id: str
+    reference_player_color: str
+    similarity_percent: int
+    is_match: bool
+
+    def to_dict(self):
+        return {
+            "harvestedSampleId": self.harvested_sample_id,
+            "referenceSampleId": self.reference_sample_id,
+            "referencePlayerColor": self.reference_player_color,
+            "similarityPercent": self.similarity_percent,
+            "isMatch": self.is_match,
         }
 
 
@@ -190,6 +242,16 @@ class Corpse:
     dna_recovered: bool = False
     reported: bool = False
     reported_by: Optional[str] = None
+    # Devine True imediat dupa raportare - la acel moment corpul e mutat automat
+    # in camera MORGUE (room_id devine "morgue", x/y sunt recalculate acolo).
+    # Ramane vizibil in morga (pentru toti) pana i se extrage ADN-ul.
+    in_morgue: bool = False
+    # ADN-ul de pe corp poate fi extras o singura data (oricine, spion sau FBI,
+    # aflat in morga langa el) - dupa aceea produce o DnaSample recoltata si
+    # corpul nu mai poate fi "lucrat" din nou.
+    dna_extracted: bool = False
+    # id-ul DnaSample-ului rezultat din extractie, daca s-a facut deja.
+    extracted_sample_id: Optional[str] = None
 
     def to_dict(self, reveal_killer: bool = False):
         return {
@@ -201,6 +263,12 @@ class Corpse:
             "y": self.y,
             "dnaRecovered": self.dna_recovered,
             "reported": self.reported,
+            "inMorgue": self.in_morgue,
+            "dnaExtracted": self.dna_extracted,
+            # dna_completeness ramane ascuns clientilor pana la extractie -
+            # altfel s-ar putea deduce daca ucigasul purta manusi (10%) inainte
+            # de a face minigame-ul, ceea ce ar da indicii nedorite.
+            "dnaCompleteness": self.dna_completeness if self.dna_extracted else None,
         }
 
 
@@ -282,3 +350,9 @@ class GameRoom:
     # host din setarile camerei, INAINTE ca jocul sa inceapa (2-12). Implicit 5.
     spy_task_count: int = 5
     spy_tasks: list[SpyTaskInstance] = field(default_factory=list)
+    # Cele doua sloturi ale "masinii de comparare ADN" din laboratorul
+    # criminalistic: id-ul mostrei recoltate (de pe un corp) si id-ul mostrei
+    # de referinta (din arhiva), daca sunt puse. Un singur slot din fiecare
+    # tip poate fi ocupat simultan - masina compara o singura pereche o data.
+    lab_machine_harvested_sample_id: Optional[str] = None
+    lab_machine_reference_sample_id: Optional[str] = None
