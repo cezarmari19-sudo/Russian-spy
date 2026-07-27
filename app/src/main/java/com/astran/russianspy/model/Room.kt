@@ -11,9 +11,7 @@ enum class RoomFunction {
     ENTRANCE,
     MEETING_ROOM,
     HALLWAY,       // coridor, fara task, doar trecere
-    HUB,           // hol central mare, fara task
-    MORGUE,        // aici sunt mutate automat corpurile dupa raportare
-    DNA_ARCHIVE    // aici sunt mostrele de referinta ale tuturor jucatorilor
+    HUB            // hol central mare, fara task
 }
 
 data class Room(
