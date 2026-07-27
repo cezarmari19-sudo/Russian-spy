@@ -55,6 +55,9 @@ import com.astran.russianspy.ui.RoleRevealScreen
 import com.astran.russianspy.ui.SettingsScreen
 import com.astran.russianspy.ui.SurveillanceMonitorsScreen
 import com.astran.russianspy.ui.WaitingRoomScreen
+import com.astran.russianspy.ui.MorgueScreen
+import com.astran.russianspy.ui.DnaArchiveScreen
+import com.astran.russianspy.ui.ForensicsLabScreen
 import com.astran.russianspy.ui.tasks.SurveillanceScreen
 import com.astran.russianspy.viewmodel.GameViewModel
 
@@ -165,6 +168,8 @@ fun RussianSpyNavGraph() {
                         when (room.function) {
                             RoomFunction.SURVEILLANCE -> navController.navigate(Routes.SURVEILLANCE_TASK)
                             RoomFunction.FORENSICS_LAB -> navController.navigate(Routes.FORENSICS_TASK)
+                            RoomFunction.MORGUE -> navController.navigate(Routes.MORGUE)
+                            RoomFunction.DNA_ARCHIVE -> navController.navigate(Routes.DNA_ARCHIVE)
                             else -> { /* camera fara task momentan */ }
                         }
                     },
@@ -219,7 +224,24 @@ fun RussianSpyNavGraph() {
             }
 
             composable(Routes.FORENSICS_TASK) {
-                PlaceholderScreen(name = "Analiza ADN")
+                ForensicsLabScreen(
+                    viewModel = gameViewModel,
+                    onExit = { navController.popBackStack() }
+                )
+            }
+
+            composable(Routes.MORGUE) {
+                MorgueScreen(
+                    viewModel = gameViewModel,
+                    onExit = { navController.popBackStack() }
+                )
+            }
+
+            composable(Routes.DNA_ARCHIVE) {
+                DnaArchiveScreen(
+                    viewModel = gameViewModel,
+                    onExit = { navController.popBackStack() }
+                )
             }
 
             composable(Routes.PHONE_TASK) {
