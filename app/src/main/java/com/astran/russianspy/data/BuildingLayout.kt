@@ -28,6 +28,14 @@ object BuildingLayout {
         Room("hall_lab_armory", "", RoomFunction.HALLWAY, x = 750f, y = 550f, width = 2150f, height = 150f),
         Room("hall_meeting_lab", "", RoomFunction.HALLWAY, x = 2200f, y = 700f, width = 100f, height = 650f),
 
+        // Morga: corpurile sunt mutate automat aici dupa ce sunt raportate.
+        Room("morgue", "Morga", RoomFunction.MORGUE, x = 400f, y = 150f, width = 350f, height = 250f),
+        Room("hall_morgue", "", RoomFunction.HALLWAY, x = 525f, y = 400f, width = 100f, height = 100f),
+
+        // Arhiva de ADN: mostrele de referinta ale tuturor jucatorilor, generate automat.
+        Room("dna_archive", "Arhiva ADN", RoomFunction.DNA_ARCHIVE, x = 50f, y = 150f, width = 300f, height = 250f),
+        Room("hall_dna_archive", "", RoomFunction.HALLWAY, x = 350f, y = 200f, width = 50f, height = 150f),
+
         Room("server_room", "Camera Servere", RoomFunction.SERVER_ROOM, x = 2900f, y = 1100f, width = 300f, height = 250f),
         Room("hall_server", "", RoomFunction.HALLWAY, x = 3000f, y = 1350f, width = 100f, height = 700f),
 
