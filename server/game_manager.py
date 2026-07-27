@@ -6,7 +6,16 @@ from typing import Optional
 from models import (
     GameRoom, GamePhase, Player, Role, RoomFunction, Room,
     SpyTaskType, SpyTaskInstance, SPY_TASK_ALLOWED_FUNCTIONS, Corpse, Meeting,
+    DnaSample, DnaComparisonResult,
 )
+
+# Paleta de culori stil Among Us - asignate jucatorilor in ordinea intrarii in
+# camera. Cu MAX_PLAYERS=15 avem nevoie de macar 15 culori distincte.
+PLAYER_COLORS = [
+    "#C51111", "#132ED1", "#117F2D", "#ED54BA", "#EF7D0D",
+    "#F5F557", "#3F474E", "#D6E0F0", "#6B2FBB", "#71491E",
+    "#38FEDC", "#50EF39", "#83A9EF", "#E7A9F0", "#5A445A",
+]
 
 
 # ATENTIE: aceste coordonate (x, y, width, height) TREBUIE sa ramana identice cu
@@ -37,6 +46,17 @@ BUILDING_LAYOUT = [
     Room("hall_lab_armory", "", RoomFunction.OFFICE, 750, 550, 2150, 150),
     Room("hall_meeting_lab", "", RoomFunction.OFFICE, 2200, 700, 100, 650),
 
+    # Morga: unde sunt mutate automat corpurile dupa ce sunt raportate. Legata
+    # de laborator printr-un hol vertical scurt (deasupra laboratorului).
+    Room("morgue", "Morga", RoomFunction.MORGUE, 400, 150, 350, 250),
+    Room("hall_morgue", "", RoomFunction.OFFICE, 525, 400, 100, 100),
+
+    # Arhiva de ADN: contine mostrele de referinta ale tuturor jucatorilor,
+    # generate automat la inceputul rundei. Langa morga, cu hol propriu catre
+    # laborator, ca sa poata circula liber intre cele 3 camere.
+    Room("dna_archive", "Arhiva ADN", RoomFunction.DNA_ARCHIVE, 50, 150, 300, 250),
+    Room("hall_dna_archive", "", RoomFunction.OFFICE, 350, 200, 50, 150),
+
     Room("server_room", "Camera Servere", RoomFunction.SERVER_ROOM, 2900, 1100, 300, 250),
     Room("hall_server", "", RoomFunction.OFFICE, 3000, 1350, 100, 700),
 
@@ -57,6 +77,7 @@ _HALLWAY_IDS = {
     "hall_entrance", "hall_meeting", "hall_office1", "hall_office2", "hall_surv",
     "hall_forensics", "hall_lab_armory", "hall_meeting_lab", "hall_server",
     "hall_armory", "hall_break", "hall_comms", "hub_central",
+    "hall_morgue", "hall_dna_archive",
 }
 
 MIN_PLAYERS = 1
@@ -74,10 +95,21 @@ class GameManager:
             if code not in self.rooms:
                 return code
 
+    def _assign_color(self, room: GameRoom) -> str:
+        """Alege prima culoare din paleta nefolosita inca de niciun jucator
+        conectat din camera. Daca s-au epuizat (nu ar trebui, MAX_PLAYERS <=
+        len(PLAYER_COLORS)), repeta paleta ca fallback sigur."""
+        used = {p.color for p in room.players.values()}
+        for color in PLAYER_COLORS:
+            if color not in used:
+                return color
+        return random.choice(PLAYER_COLORS)
+
     def create_room(self, host_player_id: str, host_name: str, account_id: Optional[str] = None) -> GameRoom:
         code = self._generate_room_code()
         room = GameRoom(room_code=code, host_id=host_player_id)
         host = Player(id=host_player_id, name=host_name, current_room_id="entrance", account_id=account_id)
+        host.color = self._assign_color(room)
         room.players[host_player_id] = host
         self.rooms[code] = room
         return room
@@ -117,6 +149,7 @@ class GameManager:
             return None, "Ai fost banat din aceasta camera"
 
         player = Player(id=player_id, name=player_name, current_room_id="entrance", account_id=account_id)
+        player.color = self._assign_color(room)
         room.players[player_id] = player
         return room, None
 
@@ -207,7 +240,37 @@ class GameManager:
         room.phase = room.phase.__class__.IN_PROGRESS
         room.surveillance_cameras = self._generate_random_camera_spots()
         room.spy_tasks = self._generate_spy_tasks(room)
+        self._generate_dna_archive(room)
+        room.corpses = {}
+        room.lab_machine_harvested_sample_id = None
+        room.lab_machine_reference_sample_id = None
         return None
+
+    def _generate_dna_archive(self, room: GameRoom):
+        """Populeaza automat camera Arhiva ADN cu o mostra de referinta per
+        jucator din partida (inclusiv spionul si agentii FBI) - fara nicio
+        actiune din partea jucatorilor. Fiecare mostra e la 100% completeness
+        si NU poate fi niciodata stricata (arhiva e sterila). Clientii vad
+        doar culoarea jucatorului asociat mostrei, niciodata identitatea/rolul -
+        asta se afla doar in urma unei comparari la masina din laborator."""
+        room.dna_samples = {
+            sample_id: sample
+            for sample_id, sample in room.dna_samples.items()
+            if not sample.is_reference
+        }
+        for pid, player in room.players.items():
+            sample_id = f"dna_ref_{pid}"
+            room.dna_samples[sample_id] = DnaSample(
+                id=sample_id,
+                room_id="dna_archive",
+                actual_owner_id=pid,
+                displayed_owner_id=pid,
+                completeness=100,
+                is_analyzed=False,
+                was_tampered_with=False,
+                is_reference=True,
+                player_color=player.color,
+            )
 
     def set_spy_task_count(self, room_code: str, requesting_player_id: str, count: int) -> Optional[str]:
         """Doar host-ul poate seta cate task-uri primeste spionul (2-12), si doar
@@ -450,6 +513,16 @@ class GameManager:
         corpse.reported = True
         corpse.reported_by = reporter_id
 
+        # Corpul e mutat automat in Morga - ramane acolo (vizibil pentru toti)
+        # pana i se extrage ADN-ul. Pozitia exacta in morga e random in
+        # interiorul camerei, ca sa nu se suprapuna cadavrele daca sunt mai
+        # multe simultan.
+        morgue_room = next(r for r in BUILDING_LAYOUT if r.id == "morgue")
+        corpse.in_morgue = True
+        corpse.room_id = "morgue"
+        corpse.x = morgue_room.x + random.uniform(40, morgue_room.width - 40)
+        corpse.y = morgue_room.y + random.uniform(40, morgue_room.height - 40)
+
         # Toti jucatorii VII sunt adusi in sala de intalniri - cei deja morti
         # (corpuri neraportate inca, daca sunt mai multe) raman unde sunt.
         for player in room.players.values():
@@ -463,6 +536,205 @@ class GameManager:
         )
         room.active_meeting = meeting
         return None, meeting
+
+    def tamper_corpse_dna(self, room_code: str, requesting_player_id: str, corpse_id: str) -> Optional[str]:
+        """Doar spionul poate face asta, si doar cat timp corpul e in Morga si
+        ADN-ul lui inca NU a fost extras (odata extras, mostra e deja o
+        DnaSample separata si stricarea corpului nu mai are efect asupra ei -
+        vezi extract_corpse_dna). Reduce dna_completeness la o valoare random
+        intre 0 si 30 ("poate fi de la 0 la suta distrus pana la 30 la suta
+        distrus random"), simuland faptul ca spionul a alterat proba fizic
+        inainte sa apuce cineva sa o recolteze. Nu are cooldown si nu necesita
+        ca spionul sa fie singur in camera - e o actiune discreta, rapida."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if room.phase != GamePhase.IN_PROGRESS:
+            return "Jocul nu e in desfasurare"
+
+        spy = room.players.get(requesting_player_id)
+        if spy is None or spy.role != Role.RUSSIAN_SPY or not spy.is_alive:
+            return "Doar spionul viu poate strica probele"
+
+        corpse = room.corpses.get(corpse_id)
+        if corpse is None:
+            return "Corp invalid"
+        if not corpse.in_morgue:
+            return "Corpul nu e in morga"
+        if corpse.dna_extracted:
+            return "ADN-ul a fost deja extras - nu mai poate fi alterat"
+        if spy.current_room_id != "morgue":
+            return "Trebuie sa fii in morga"
+
+        corpse.dna_completeness = random.randint(0, 30)
+        return None
+
+    def extract_corpse_dna(
+        self, room_code: str, requesting_player_id: str, corpse_id: str
+    ) -> tuple[Optional[str], Optional[DnaSample]]:
+        """Oricine (spion SAU agent FBI) aflat in Morga langa un corp raportat
+        poate extrage ADN-ul lui, o singura data - genereaza o DnaSample
+        RECOLTATA (is_reference=False), legata de corpse_id, cu exact
+        completeness-ul curent al corpului (deja stabilit la kill_player, sau
+        redus intre timp de spion prin tamper_corpse_dna). Dupa extractie,
+        completeness-ul mostrei e fixat definitiv - stricarea corpului dupa
+        acest punct nu mai are niciun efect (ceea ce respecta cerinta ca
+        stricarea sa fie posibila DOAR pe corp, in morga, inainte de extractie)."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista", None
+        if room.phase != GamePhase.IN_PROGRESS:
+            return "Jocul nu e in desfasurare", None
+
+        player = room.players.get(requesting_player_id)
+        if player is None or not player.is_alive:
+            return "Doar un jucator viu poate extrage ADN", None
+        if player.current_room_id != "morgue":
+            return "Trebuie sa fii in morga", None
+
+        corpse = room.corpses.get(corpse_id)
+        if corpse is None:
+            return "Corp invalid", None
+        if not corpse.in_morgue:
+            return "Corpul nu e in morga", None
+        if corpse.dna_extracted:
+            return "ADN-ul a fost deja extras de pe acest corp", None
+
+        sample_id = f"dna_harvest_{corpse_id}"
+        sample = DnaSample(
+            id=sample_id,
+            room_id="morgue",
+            actual_owner_id=corpse.victim_id,
+            displayed_owner_id=corpse.victim_id,
+            completeness=corpse.dna_completeness,
+            is_reference=False,
+            source_corpse_id=corpse_id,
+        )
+        room.dna_samples[sample_id] = sample
+        corpse.dna_extracted = True
+        corpse.dna_recovered = True
+        corpse.extracted_sample_id = sample_id
+        return None, sample
+
+    def move_dna_sample_to_lab(
+        self, room_code: str, requesting_player_id: str, sample_id: str
+    ) -> Optional[str]:
+        """Muta o mostra (recoltata din morga SAU de referinta din arhiva) in
+        camera Laborator Criminalistic, gata sa fie pusa in masina de
+        comparare. Jucatorul trebuie sa fie fizic in camera unde se afla in
+        prezent mostra (morga sau arhiva) - simuleaza transportul manual al
+        probei. Mostrele de referinta raman disponibile in continuare si in
+        arhiva pentru alti jucatori (nu se "consuma" - reprezinta un
+        depozit central, nu un obiect fizic unic)."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if room.phase != GamePhase.IN_PROGRESS:
+            return "Jocul nu e in desfasurare"
+
+        player = room.players.get(requesting_player_id)
+        if player is None or not player.is_alive:
+            return "Doar un jucator viu poate transporta probe"
+
+        sample = room.dna_samples.get(sample_id)
+        if sample is None:
+            return "Mostra nu exista"
+        if player.current_room_id != sample.room_id:
+            return "Trebuie sa fii in camera unde se afla mostra"
+        if sample.room_id not in ("morgue", "dna_archive"):
+            return "Mostra nu mai poate fi transportata de aici"
+
+        sample.room_id = "forensics"
+        return None
+
+    def place_sample_in_lab_machine(
+        self, room_code: str, requesting_player_id: str, sample_id: str
+    ) -> Optional[str]:
+        """Pune o mostra (adusa deja in laborator) intr-unul din cele doua
+        sloturi ale masinii de comparare: slotul de mostre RECOLTATE (de pe un
+        corp) daca sample.is_reference e False, sau slotul de REFERINTA daca e
+        True. Jucatorul trebuie sa fie fizic in laborator."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if room.phase != GamePhase.IN_PROGRESS:
+            return "Jocul nu e in desfasurare"
+
+        player = room.players.get(requesting_player_id)
+        if player is None or not player.is_alive:
+            return "Doar un jucator viu poate folosi laboratorul"
+        if player.current_room_id != "forensics":
+            return "Trebuie sa fii in laboratorul criminalistic"
+
+        sample = room.dna_samples.get(sample_id)
+        if sample is None:
+            return "Mostra nu exista"
+        if sample.room_id != "forensics":
+            return "Mostra trebuie adusa mai intai in laborator"
+
+        sample.placed_in_lab_slot = True
+        if sample.is_reference:
+            room.lab_machine_reference_sample_id = sample_id
+        else:
+            room.lab_machine_harvested_sample_id = sample_id
+        return None
+
+    def compare_dna_samples(
+        self, room_code: str, requesting_player_id: str
+    ) -> tuple[Optional[str], Optional[DnaComparisonResult]]:
+        """Ruleaza compararea masinii din laborator: mostra recoltata (de pe
+        un corp) vs. mostra de referinta puse in cele doua sloturi. Similarity
+        e calculat plecand de la completeness-ul mostrei recoltate - cu cat e
+        mai putin completa (ex. stricata de spion la 0-30%), cu atat rezultatul
+        e mai putin clar/mai putin sigur, chiar daca cele doua mostre
+        apartin de fapt aceluiasi jucator. Rezultatul e vizibil STRICT pentru
+        cel care a facut compararea (nu e broadcastat catre restul camerei)."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista", None
+        if room.phase != GamePhase.IN_PROGRESS:
+            return "Jocul nu e in desfasurare", None
+
+        player = room.players.get(requesting_player_id)
+        if player is None or not player.is_alive:
+            return "Doar un jucator viu poate folosi laboratorul", None
+        if player.current_room_id != "forensics":
+            return "Trebuie sa fii in laboratorul criminalistic", None
+
+        harvested_id = room.lab_machine_harvested_sample_id
+        reference_id = room.lab_machine_reference_sample_id
+        if not harvested_id or not reference_id:
+            return "Ambele sloturi trebuie ocupate (o mostra recoltata si una de referinta)", None
+
+        harvested = room.dna_samples.get(harvested_id)
+        reference = room.dna_samples.get(reference_id)
+        if harvested is None or reference is None:
+            return "Mostra invalida", None
+
+        same_owner = harvested.actual_owner_id == reference.actual_owner_id
+        completeness = harvested.completeness
+
+        if same_owner:
+            # Mostra e cu adevarat a aceleiasi persoane - similarity urmareste
+            # completeness-ul (o mostra stricata da un match mai slab/mai
+            # incert, desi ADN-ul e real).
+            similarity = completeness
+        else:
+            # Nu e aceeasi persoana - similarity ramane mic indiferent de
+            # completeness (putin zgomot random ca sa nu fie mereu identic).
+            similarity = random.randint(0, 12)
+
+        similarity = max(0, min(100, similarity))
+        harvested.is_analyzed = True
+
+        result = DnaComparisonResult(
+            harvested_sample_id=harvested_id,
+            reference_sample_id=reference_id,
+            reference_player_color=reference.player_color,
+            similarity_percent=similarity,
+            is_match=same_owner and harvested.is_reliable(),
+        )
+        return None, result
 
     def cast_vote(self, room_code: str, voter_id: str, target_player_id: Optional[str]) -> Optional[str]:
         """Inregistreaza votul unui jucator viu in intalnirea activa curenta.
