@@ -27,6 +27,7 @@ import com.astran.russianspy.viewmodel.GameViewModel
  * trimite o mostra de referinta spre Laboratorul Criminalistic (mostra ramane
  * disponibila si aici, nu se "consuma").
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DnaArchiveScreen(
     viewModel: GameViewModel,
