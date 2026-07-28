@@ -618,34 +618,59 @@ class GameManager:
 
     def move_dna_sample_to_lab(
         self, room_code: str, requesting_player_id: str, sample_id: str
-    ) -> Optional[str]:
-        """Muta o mostra (recoltata din morga SAU de referinta din arhiva) in
-        camera Laborator Criminalistic, gata sa fie pusa in masina de
-        comparare. Jucatorul trebuie sa fie fizic in camera unde se afla in
-        prezent mostra (morga sau arhiva) - simuleaza transportul manual al
-        probei. Mostrele de referinta raman disponibile in continuare si in
-        arhiva pentru alti jucatori (nu se "consuma" - reprezinta un
-        depozit central, nu un obiect fizic unic)."""
+    ) -> tuple[Optional[str], Optional[DnaSample]]:
+        """Muta o mostra RECOLTATA (din morga) in Laboratorul Criminalistic -
+        aceasta chiar se muta (nu exista decat o singura copie, legata de un
+        corp anume). Pentru o mostra de REFERINTA (din arhiva), NU se muta
+        originalul (care ar disparea din arhiva pentru toti ceilalti) - in
+        schimb se creeaza o COPIE noua, independenta, cu propriul id, trimisa
+        direct in laborator; originalul ramane intact in arhiva, disponibil
+        sa fie trimis din nou oricand, de oricine. Copia trimisa la laborator
+        e stearsa automat dupa ce e folosita intr-o comparare (vezi
+        compare_dna_samples), sau ramane in laborator pana atunci daca nu mai
+        e folosita.
+        Returneaza (eroare, None) daca esueaza, sau (None, mostra_trimisa) daca
+        reuseste - main.py foloseste mostra intoarsa pentru broadcast (poate fi
+        o copie noua, cu alt id decat sample_id primit, pentru referinte)."""
         room = self.rooms.get(room_code)
         if room is None:
-            return "Camera nu exista"
+            return "Camera nu exista", None
         if room.phase != GamePhase.IN_PROGRESS:
-            return "Jocul nu e in desfasurare"
+            return "Jocul nu e in desfasurare", None
 
         player = room.players.get(requesting_player_id)
         if player is None or not player.is_alive:
-            return "Doar un jucator viu poate transporta probe"
+            return "Doar un jucator viu poate transporta probe", None
 
         sample = room.dna_samples.get(sample_id)
         if sample is None:
-            return "Mostra nu exista"
-        if player.current_room_id != sample.room_id:
-            return "Trebuie sa fii in camera unde se afla mostra"
-        if sample.room_id not in ("morgue", "dna_archive"):
-            return "Mostra nu mai poate fi transportata de aici"
+            return "Mostra nu exista", None
 
-        sample.room_id = "forensics"
-        return None
+        if sample.is_reference:
+            # Referinta: jucatorul trebuie sa fie fizic in arhiva, dar
+            # originalul NU se muta - se trimite o copie noua la laborator.
+            if player.current_room_id != "dna_archive":
+                return "Trebuie sa fii in arhiva ADN", None
+            copy_id = f"{sample.id}_copy_{random.randint(100000, 999999)}"
+            copy_sample = DnaSample(
+                id=copy_id,
+                room_id="forensics",
+                actual_owner_id=sample.actual_owner_id,
+                displayed_owner_id=sample.displayed_owner_id,
+                completeness=sample.completeness,
+                is_reference=True,
+                player_color=sample.player_color,
+            )
+            room.dna_samples[copy_id] = copy_sample
+            return None, copy_sample
+        else:
+            # Recoltata: se muta efectiv (exista o singura mostra per corp).
+            if player.current_room_id != sample.room_id:
+                return "Trebuie sa fii in camera unde se afla mostra", None
+            if sample.room_id != "morgue":
+                return "Mostra nu mai poate fi transportata de aici", None
+            sample.room_id = "forensics"
+            return None, sample
 
     def place_sample_in_lab_machine(
         self, room_code: str, requesting_player_id: str, sample_id: str
@@ -734,6 +759,20 @@ class GameManager:
             similarity_percent=similarity,
             is_match=same_owner and harvested.is_reliable(),
         )
+
+        # Dupa folosire, mostrele din masina "dispar" - nu mai raman in
+        # laborator, gata pentru o comparare urmatoare (fiecare comparare e
+        # o singura folosire). Mostra RECOLTATA dispare definitiv (era
+        # oricum unica, legata de un singur corp - o data comparata, nu mai
+        # e nevoie de ea). Mostra de REFERINTA era deja o COPIE creata la
+        # move_dna_sample_to_lab (originalul ramane intact, nealterat, in
+        # arhiva - vezi move_dna_sample_to_lab), deci stergerea ei aici NU
+        # afecteaza arhiva, care ramane disponibila pentru viitoare trimiteri.
+        room.dna_samples.pop(harvested_id, None)
+        room.dna_samples.pop(reference_id, None)
+        room.lab_machine_harvested_sample_id = None
+        room.lab_machine_reference_sample_id = None
+
         return None, result
 
     def cast_vote(self, room_code: str, voter_id: str, target_player_id: Optional[str]) -> Optional[str]:
