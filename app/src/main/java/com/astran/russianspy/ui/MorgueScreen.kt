@@ -25,6 +25,7 @@ import com.astran.russianspy.viewmodel.GameViewModel
  * strica proba (reduce completeness la 0-30%) inainte ca cineva sa apuce sa o
  * extraga - actiune discreta, fara indiciu vizual pentru ceilalti.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MorgueScreen(
     viewModel: GameViewModel,
