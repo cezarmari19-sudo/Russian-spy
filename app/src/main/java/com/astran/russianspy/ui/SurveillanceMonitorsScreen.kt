@@ -439,6 +439,8 @@ private fun roomFloorColor(room: Room): Color {
         RoomFunction.BREAK_ROOM -> Color(0xFF2A1E19)
         RoomFunction.COMMS_MONITOR -> Color(0xFF33300F)
         RoomFunction.MEETING_ROOM -> Color(0xFF361212)
+        RoomFunction.MORGUE -> Color(0xFF12161A)
+        RoomFunction.DNA_ARCHIVE -> Color(0xFF082922)
     }
 }
 
