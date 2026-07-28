@@ -27,6 +27,7 @@ import com.astran.russianspy.viewmodel.GameViewModel
  * sloturi ale masinii (recoltat vs. referinta). Rezultatul comparatiei e
  * vizibil STRICT pentru cel care apasa butonul de comparare.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ForensicsLabScreen(
     viewModel: GameViewModel,
