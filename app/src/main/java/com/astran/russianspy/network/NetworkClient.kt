@@ -59,6 +59,9 @@ sealed class ServerEvent {
     data class LabMachineUpdated(val harvestedSampleId: String?, val referenceSampleId: String?) : ServerEvent()
     /** Rezultatul compararii ADN - trimis STRICT catre cel care a facut comparatia. */
     data class DnaComparisonResultEvent(val result: DnaComparisonResultInfo?) : ServerEvent()
+    /** Mostrele folosite intr-o comparare au fost sterse de pe server - clientul
+     * trebuie sa le elimine din lista locala si din sloturile masinii. */
+    data class DnaSamplesConsumed(val harvestedSampleId: String?, val referenceSampleId: String?) : ServerEvent()
 }
 
 /** Un task alocat spionului: tip, camera + punct exact x/y unde trebuie facut, si daca e completat acum. */
@@ -449,6 +452,12 @@ class NetworkClient(
                     )
                 )
             }
+            "dna_samples_consumed" -> onEvent(
+                ServerEvent.DnaSamplesConsumed(
+                    harvestedSampleId = if (json.isNull("harvestedSampleId")) null else json.optString("harvestedSampleId", null),
+                    referenceSampleId = if (json.isNull("referenceSampleId")) null else json.optString("referenceSampleId", null)
+                )
+            )
         }
     }
 
