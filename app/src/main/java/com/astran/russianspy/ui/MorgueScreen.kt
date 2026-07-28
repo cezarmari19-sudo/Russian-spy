@@ -31,7 +31,10 @@ fun MorgueScreen(
     viewModel: GameViewModel,
     onExit: () -> Unit
 ) {
-    val corpses = viewModel.corpses.filter { it.inMorgue }
+    // Corpurile inca "de lucru" in morga - odata ce ADN-ul le-a fost extras,
+    // dispar din aceasta lista (nu mai e nimic de facut pe ele aici; mostra
+    // recoltata rezultata se gaseste/gestioneaza din Laborator).
+    val corpses = viewModel.corpses.filter { it.inMorgue && !it.dnaExtracted }
     val myRole = viewModel.myRole.value
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0D0F)) {
