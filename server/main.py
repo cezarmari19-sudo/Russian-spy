@@ -463,15 +463,17 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
 
             elif action == "move_dna_sample_to_lab":
                 sample_id = data.get("sampleId", "")
-                error = game_manager.move_dna_sample_to_lab(room_code, player_id, sample_id)
+                error, moved_sample = game_manager.move_dna_sample_to_lab(room_code, player_id, sample_id)
                 if error:
                     await websocket.send_text(json.dumps({"type": "error", "message": error}))
                 else:
-                    room = game_manager.get_room(room_code)
-                    sample = room.dna_samples.get(sample_id) if room else None
+                    # moved_sample poate avea un id DIFERIT de sample_id primit
+                    # (o copie noua, pentru mostre de referinta - vezi
+                    # game_manager.move_dna_sample_to_lab) - clientul primeste
+                    # mostra corecta, cu id-ul ei real, indiferent care a fost.
                     await broadcast_to_room(room_code, {
                         "type": "dna_sample_moved",
-                        "sample": sample.to_dict() if sample else None,
+                        "sample": moved_sample.to_dict() if moved_sample else None,
                     })
 
             elif action == "place_sample_in_lab_machine":
@@ -489,6 +491,13 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         })
 
             elif action == "compare_dna_samples":
+                harvested_id_before = None
+                reference_id_before = None
+                room = game_manager.get_room(room_code)
+                if room is not None:
+                    harvested_id_before = room.lab_machine_harvested_sample_id
+                    reference_id_before = room.lab_machine_reference_sample_id
+
                 error, result = game_manager.compare_dna_samples(room_code, player_id)
                 if error:
                     await websocket.send_text(json.dumps({"type": "error", "message": error}))
@@ -499,6 +508,16 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         "type": "dna_comparison_result",
                         "result": result.to_dict() if result else None,
                     }))
+                    # Cele doua mostre din sloturi au fost consumate si sterse
+                    # de compare_dna_samples - anuntam toata camera, ca sa
+                    # dispara si vizual din laborator/masina pe toti clientii
+                    # (vezi bug raportat: fara asta, mostrele "fantoma" ramaneau
+                    # afisate desi nu mai existau pe server).
+                    await broadcast_to_room(room_code, {
+                        "type": "dna_samples_consumed",
+                        "harvestedSampleId": harvested_id_before,
+                        "referenceSampleId": reference_id_before,
+                    })
 
             elif action == "cast_vote":
                 # targetPlayerId absent sau null in JSON => vot de "skip" (None).
