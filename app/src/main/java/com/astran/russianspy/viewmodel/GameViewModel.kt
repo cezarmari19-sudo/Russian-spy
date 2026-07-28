@@ -642,6 +642,16 @@ class GameViewModel : ViewModel() {
             is ServerEvent.DnaComparisonResultEvent -> {
                 _dnaComparisonResult.value = event.result
             }
+            is ServerEvent.DnaSamplesConsumed -> {
+                event.harvestedSampleId?.let { id -> dnaSamples.removeAll { it.id == id } }
+                event.referenceSampleId?.let { id -> dnaSamples.removeAll { it.id == id } }
+                if (_labMachineHarvestedSampleId.value == event.harvestedSampleId) {
+                    _labMachineHarvestedSampleId.value = null
+                }
+                if (_labMachineReferenceSampleId.value == event.referenceSampleId) {
+                    _labMachineReferenceSampleId.value = null
+                }
+            }
             is ServerEvent.YouWereKilled -> {
                 _isDead.value = true
             }
