@@ -100,6 +100,26 @@ fun GameCanvasScreen(
     // exclusiv pe acest cronometru local.
     var killCooldownUntilMillis by remember { mutableStateOf(0L) }
 
+    // BUGFIX: dupa ce un meeting se rezolva, jucatorii au fost teleportati pe
+    // SERVER in "meeting_room" (report_corpse), dar pe CLIENT raman vizual
+    // exact unde erau pe canvas (playerX/playerY nu se schimba). Cum
+    // moveToRoom() se trimite doar la SCHIMBAREA camerei detectate local,
+    // serverul ramanea permanent cu current_room_id="meeting_room" pentru
+    // orice jucator care nu se misca imediat dupa meeting - facand imposibila
+    // orice verificare de camera (ex: "trebuie sa fii in morga") pana la prima
+    // miscare fizica viitoare. Retrimitem explicit camera curenta reala de
+    // fiecare data cand activeMeeting trece din non-null in null, indiferent
+    // daca s-a "schimbat" fata de valoarea locala anterioara.
+    LaunchedEffect(viewModel.activeMeeting.value) {
+        if (viewModel.activeMeeting.value == null) {
+            val realRoomId = BuildingLayout.getRoomAtPoint(playerX, playerY)?.id
+            if (!realRoomId.isNullOrEmpty()) {
+                currentRoomIdLocal = realRoomId
+                viewModel.moveToRoom(realRoomId)
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         var frameCounter = 0
         while (true) {
