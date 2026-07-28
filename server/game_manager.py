@@ -168,7 +168,6 @@ class GameManager:
         controale de lobby (start/kick/ban) dupa ce jocul a inceput deja."""
         if room.phase.value != "LOBBY":
             return
-
         current_host = room.players.get(room.host_id)
         if current_host is not None and current_host.connected:
             return  # host-ul curent e inca aici, nimic de facut
