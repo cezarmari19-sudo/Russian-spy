@@ -20,6 +20,8 @@ import com.astran.russianspy.network.PlayerPositionInfo
 import com.astran.russianspy.network.ServerEvent
 import com.astran.russianspy.network.SpyTaskInfo
 import com.astran.russianspy.network.CorpseInfo
+import com.astran.russianspy.network.DnaSampleInfo
+import com.astran.russianspy.network.DnaComparisonResultInfo
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -165,6 +167,59 @@ class GameViewModel : ViewModel() {
     // "corpse_found" trimis de server la fiecare omor reusit.
     val corpses = mutableStateListOf<CorpseInfo>()
 
+    // Toate mostrele de ADN cunoscute clientului: cele de referinta din
+    // Arhiva ADN (populate automat la "dna_archive_ready") si cele recoltate
+    // de pe corpuri in Morga (populate la "corpse_dna_extracted"), plus orice
+    // mostra mutata intre camere ("dna_sample_moved"). Ecranele de Morga,
+    // Arhiva ADN si Laborator Criminalistic filtreaza aceasta lista dupa
+    // roomId ca sa stie ce sa afiseze fiecare.
+    val dnaSamples = mutableStateListOf<DnaSampleInfo>()
+
+    // Id-urile mostrelor puse curent in cele doua sloturi ale masinii de
+    // comparare din laborator (null = slot gol) - populate din
+    // "lab_machine_updated", vizibile pentru toata camera (oricine poate
+    // vedea CE mostre sunt in masina, dar NU si rezultatul comparatiei).
+    private val _labMachineHarvestedSampleId = mutableStateOf<String?>(null)
+    val labMachineHarvestedSampleId: State<String?> = _labMachineHarvestedSampleId
+    private val _labMachineReferenceSampleId = mutableStateOf<String?>(null)
+    val labMachineReferenceSampleId: State<String?> = _labMachineReferenceSampleId
+
+    // Rezultatul ultimei comparari ADN facute de jucatorul LOCAL - vizibil
+    // strict pe acest client (serverul nu il trimite nimanui altcuiva).
+    // Ramane populat pana e confirmat, ca ecranul de laborator sa poata
+    // afisa un dialog cu procentul de asemanare.
+    private val _dnaComparisonResult = mutableStateOf<DnaComparisonResultInfo?>(null)
+    val dnaComparisonResult: State<DnaComparisonResultInfo?> = _dnaComparisonResult
+
+    fun acknowledgeDnaComparisonResult() {
+        _dnaComparisonResult.value = null
+    }
+
+    /** Doar spionul, doar pe un corp aflat in Morga si inca neextras. */
+    fun tamperCorpseDna(corpseId: String) {
+        networkClient?.sendTamperCorpseDna(corpseId)
+    }
+
+    /** Oricine (spion sau agent FBI) aflat in Morga langa un corp raportat. */
+    fun extractCorpseDna(corpseId: String) {
+        networkClient?.sendExtractCorpseDna(corpseId)
+    }
+
+    /** Muta o mostra (din morga sau arhiva) spre Laboratorul Criminalistic. */
+    fun moveDnaSampleToLab(sampleId: String) {
+        networkClient?.sendMoveDnaSampleToLab(sampleId)
+    }
+
+    /** Pune o mostra deja adusa in laborator intr-unul din sloturile masinii. */
+    fun placeSampleInLabMachine(sampleId: String) {
+        networkClient?.sendPlaceSampleInLabMachine(sampleId)
+    }
+
+    /** Ruleaza compararea - necesita ambele sloturi ocupate (verificat pe server). */
+    fun compareDnaSamples() {
+        networkClient?.sendCompareDnaSamples()
+    }
+
     // Devine true DOAR pe clientul victimei, cand serverul confirma ca a fost
     // ucisa ("you_were_killed") - GameCanvasScreen trebuie sa observe asta si
     // sa treaca jucatorul in mod spectator (fara miscare/interactiune).
@@ -271,6 +326,10 @@ class GameViewModel : ViewModel() {
         playerNames.clear()
         spyTasks.clear()
         corpses.clear()
+        dnaSamples.clear()
+        _labMachineHarvestedSampleId.value = null
+        _labMachineReferenceSampleId.value = null
+        _dnaComparisonResult.value = null
         playersWhoVoted.clear()
         _isDead.value = false
     }
@@ -307,6 +366,10 @@ class GameViewModel : ViewModel() {
         surveillanceCameraSpots.clear()
         spyTasks.clear()
         corpses.clear()
+        dnaSamples.clear()
+        _labMachineHarvestedSampleId.value = null
+        _labMachineReferenceSampleId.value = null
+        _dnaComparisonResult.value = null
         playersWhoVoted.clear()
         _isDead.value = false
     }
@@ -523,6 +586,61 @@ class GameViewModel : ViewModel() {
                 } else {
                     corpses.add(event.corpse)
                 }
+            }
+            is ServerEvent.DnaArchiveReady -> {
+                // Inlocuim doar mostrele de referinta - cele recoltate (daca
+                // exista deja) raman neatinse.
+                dnaSamples.removeAll { it.isReference }
+                dnaSamples.addAll(event.samples)
+            }
+            is ServerEvent.CorpseDnaTampered -> {
+                // Nu avem completeness-ul nou (server-ul nu il dezvaluie -
+                // vezi Corpse.to_dict), doar reimprospatam corpul ca sa
+                // ramana consistent daca UI-ul afiseaza vreun indiciu vizual.
+            }
+            is ServerEvent.CorpseDnaExtracted -> {
+                val cIndex = corpses.indexOfFirst { it.id == event.corpse.id }
+                if (cIndex >= 0) {
+                    corpses[cIndex] = event.corpse
+                } else {
+                    corpses.add(event.corpse)
+                }
+                if (event.sample != null) {
+                    val sIndex = dnaSamples.indexOfFirst { it.id == event.sample.id }
+                    if (sIndex >= 0) {
+                        dnaSamples[sIndex] = event.sample
+                    } else {
+                        dnaSamples.add(event.sample)
+                    }
+                }
+            }
+            is ServerEvent.DnaSampleMoved -> {
+                if (event.sample != null) {
+                    val index = dnaSamples.indexOfFirst { it.id == event.sample.id }
+                    if (index >= 0) {
+                        dnaSamples[index] = event.sample
+                    } else {
+                        dnaSamples.add(event.sample)
+                    }
+                }
+            }
+            is ServerEvent.LabMachineUpdated -> {
+                _labMachineHarvestedSampleId.value = event.harvestedSampleId
+                _labMachineReferenceSampleId.value = event.referenceSampleId
+                // Marcam mostrele corespunzatoare ca fiind puse in slot, ca
+                // UI-ul din laborator sa le poata distinge de cele doar
+                // aduse in camera dar inca neplasate in masina.
+                event.harvestedSampleId?.let { id ->
+                    val i = dnaSamples.indexOfFirst { it.id == id }
+                    if (i >= 0) dnaSamples[i] = dnaSamples[i].copy(placedInLabSlot = true)
+                }
+                event.referenceSampleId?.let { id ->
+                    val i = dnaSamples.indexOfFirst { it.id == id }
+                    if (i >= 0) dnaSamples[i] = dnaSamples[i].copy(placedInLabSlot = true)
+                }
+            }
+            is ServerEvent.DnaComparisonResultEvent -> {
+                _dnaComparisonResult.value = event.result
             }
             is ServerEvent.YouWereKilled -> {
                 _isDead.value = true
