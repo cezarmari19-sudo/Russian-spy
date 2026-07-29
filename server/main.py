@@ -383,6 +383,19 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                     # bug-ul cu "X din Y au votat" numarand gresit mortii).
                     await broadcast_lobby_update(room_code)
 
+                    # Anuntam STRICT ucigasul cat timp real mai are de asteptat
+                    # pana la urmatorul omor (kill_cooldown_seconds al camerei,
+                    # nu o valoare fixa presupusa de client) - repara bug-ul
+                    # unde clientul isi pierdea cooldown-ul local la orice
+                    # navigare (Morga/Arhiva/Laborator) si credea ca poate
+                    # ucide din nou imediat, desi serverul tot il respingea.
+                    room_after_kill = game_manager.get_room(room_code)
+                    if room_after_kill is not None:
+                        await websocket.send_text(json.dumps({
+                            "type": "kill_cooldown_started",
+                            "cooldownSeconds": room_after_kill.kill_cooldown_seconds,
+                        }))
+
             elif action == "report_corpse":
                 corpse_id = data.get("corpseId", "")
                 room = game_manager.get_room(room_code)
