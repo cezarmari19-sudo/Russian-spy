@@ -269,6 +269,12 @@ class Corpse:
             # altfel s-ar putea deduce daca ucigasul purta manusi (10%) inainte
             # de a face minigame-ul, ceea ce ar da indicii nedorite.
             "dnaCompleteness": self.dna_completeness if self.dna_extracted else None,
+            # Necesar clientului ca sa stie ce mostra sa trimita la Laborator
+            # din Morga (butonul "Trimite ADN la laborator" - fara acest id,
+            # clientul nu avea de unde sa afle sample_id-ul rezultat din
+            # extractie, si mostra recoltata ramanea "prinsa" in morga,
+            # nemaiajungand niciodata in laborator).
+            "extractedSampleId": self.extracted_sample_id if self.dna_extracted else None,
         }
 
 
