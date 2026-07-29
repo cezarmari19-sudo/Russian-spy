@@ -288,9 +288,19 @@ fun GameCanvasScreen(
 
             // Ceilalti jucatori vizibili in raza jucatorului local (nu prin pereti),
             // desenati inainte de cercul propriu, ca sa nu se suprapuna vizual gresit.
+            // Filtram dupa isAlive (din lobbyPlayers) - playerLivePositions NU e
+            // curatata cand un jucator moare (doar la deconectare), deci fara acest
+            // filtru, victima ramanea desenata la nesfarsit exact in locul unde a
+            // murit, ca un cerc normal de jucator - identic vizual cu un cadavru
+            // "ramas pe jos", desi corpse.reported era deja true (vezi mai jos).
+            val alivePlayerIdsForDrawing = viewModel.lobbyPlayers
+                .filter { it.connected && it.isAlive }
+                .map { it.id }
+                .toSet()
             clipPath(visibilityPathScreen) {
                 viewModel.playerLivePositions.entries.forEach { (otherPlayerId, pos) ->
                     if (otherPlayerId == viewModel.localPlayerId.value) return@forEach
+                    if (otherPlayerId !in alivePlayerIdsForDrawing) return@forEach
                     val isVisible = isPointVisibleFromPoint(
                         pos.x, pos.y, playerX, playerY, wallSegments, VIEW_RADIUS
                     )
@@ -649,25 +659,6 @@ fun GameCanvasScreen(
                     activeTaskDialog = null
                 },
                 onCancel = { activeTaskDialog = null }
-            )
-        }
-
-        // TEMPORAR - banner de debug vizibil pe ecran, ca sa vedem starea
-        // corpurilor primite de la server fara Logcat/Android Studio. De
-        // scos dupa ce gasim bug-ul "corpul ramane dupa report".
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(top = 90.dp, start = 8.dp)
-                .background(Color(0xCC000000))
-                .padding(6.dp)
-        ) {
-            Text(
-                text = viewModel.corpses.joinToString("\n") {
-                    "id=${it.id.takeLast(6)} rep=${it.reported} room=${it.roomId} morgue=${it.inMorgue}"
-                }.ifBlank { "no corpses" },
-                color = Color(0xFF00FF00),
-                fontSize = 11.sp
             )
         }
 
