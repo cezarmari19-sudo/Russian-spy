@@ -571,13 +571,19 @@ class GameManager:
         self, room_code: str, requesting_player_id: str, corpse_id: str
     ) -> tuple[Optional[str], Optional[DnaSample]]:
         """Oricine (spion SAU agent FBI) aflat in Morga langa un corp raportat
-        poate extrage ADN-ul lui, o singura data - genereaza o DnaSample
-        RECOLTATA (is_reference=False), legata de corpse_id, cu exact
-        completeness-ul curent al corpului (deja stabilit la kill_player, sau
-        redus intre timp de spion prin tamper_corpse_dna). Dupa extractie,
+        poate extrage ADN-ul lui - genereaza o DnaSample RECOLTATA
+        (is_reference=False), legata de corpse_id, cu exact completeness-ul
+        curent al corpului (deja stabilit la kill_player, sau redus intre
+        timp de spion prin tamper_corpse_dna). Dupa PRIMA extractie,
         completeness-ul mostrei e fixat definitiv - stricarea corpului dupa
         acest punct nu mai are niciun efect (ceea ce respecta cerinta ca
-        stricarea sa fie posibila DOAR pe corp, in morga, inainte de extractie)."""
+        stricarea sa fie posibila DOAR pe corp, in morga, inainte de extractie).
+        Poate fi apelata de oricate ori pe acelasi corp - daca ADN-ul a fost
+        deja extras o data, apelurile urmatoare NU mai creeaza o mostra noua,
+        ci intorc mostra deja existenta din morga (ramane disponibila la
+        infinit, ca o arhiva, la fel ca mostrele de referinta - vezi si
+        move_dna_sample_to_lab, care poate trimite din nou aceasta mostra la
+        laborator oricand, fara sa o consume)."""
         room = self.rooms.get(room_code)
         if room is None:
             return "Camera nu exista", None
@@ -593,10 +599,20 @@ class GameManager:
             return "Corp invalid", None
         if not corpse.in_morgue:
             return "Corpul nu e in morga", None
-        if corpse.dna_extracted:
-            return "ADN-ul a fost deja extras de pe acest corp", None
 
-        sample_id = f"dna_harvest_{corpse_id}"
+        if corpse.dna_extracted:
+            # Deja extras anterior - returnam mostra existenta din morga
+            # (daca inca exista acolo) in loc sa respingem cererea, ca sa
+            # se poata retrimite la laborator oricand, la infinit.
+            existing = room.dna_samples.get(corpse.extracted_sample_id)
+            if existing is not None:
+                return None, existing
+            # Mostra originala nu mai e in dictionar dintr-un motiv oarecare
+            # (nu ar trebui sa se intample cu fix-ul din move_dna_sample_to_lab,
+            # care nu mai muta/sterge originalul) - o recream mai jos, ca sa
+            # nu ramana blocat definitiv fara acces la ADN-ul corpului.
+
+        sample_id = corpse.extracted_sample_id or f"dna_harvest_{corpse_id}"
         sample = DnaSample(
             id=sample_id,
             room_id="morgue",
