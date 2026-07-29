@@ -98,7 +98,8 @@ fun GameCanvasScreen(
     // reala (daca a trecut suficient timp) se face intotdeauna pe server:
     // daca acesta refuza (prea devreme), afisam eroarea primita, nu ne bazam
     // exclusiv pe acest cronometru local.
-    var killCooldownUntilMillis by remember { mutableStateOf(0L) }
+    // Cooldown-ul de omor e tinut acum in GameViewModel (vezi mai jos, langa
+    // butonul de omor) - nu mai e local aici, ca sa supravietuiasca navigarii.
 
     // BUGFIX: dupa ce un meeting se rezolva, jucatorii au fost teleportati pe
     // SERVER in "meeting_room" (report_corpse), dar pe CLIENT raman vizual
@@ -511,17 +512,29 @@ fun GameCanvasScreen(
                 fbiTargetsNearby.size > 1
             val killTarget = fbiTargetsNearby.firstOrNull()?.key
 
-            val nowMillis = System.currentTimeMillis()
-            val onCooldown = nowMillis < killCooldownUntilMillis
+            // Cooldown-ul real e tinut in GameViewModel (supravietuieste
+            // navigarii catre Morga/Arhiva/Laborator/Camere - vezi BUGFIX in
+            // GameViewModel.killPlayer), setat de server prin evenimentul
+            // "kill_cooldown_started" dupa fiecare omor reusit, cu durata
+            // REALA a camerei, nu o valoare fixa presupusa de client.
+            // "nowTick" se actualizeaza o data pe secunda, ca numaratoarea
+            // afisata sa scada vizibil - fara acest tick, textul ramanea
+            // "inghetat" pana la urmatoarea recompunere din alt motiv.
+            var nowTick by remember { mutableStateOf(System.currentTimeMillis()) }
+            LaunchedEffect(viewModel.killCooldownUntilMillis.value) {
+                while (System.currentTimeMillis() < viewModel.killCooldownUntilMillis.value) {
+                    delay(500L)
+                    nowTick = System.currentTimeMillis()
+                }
+                nowTick = System.currentTimeMillis()
+            }
+            val onCooldown = nowTick < viewModel.killCooldownUntilMillis.value
 
             if (killTarget != null && !hasWitnesses && activeTaskDialog == null) {
                 Button(
                     onClick = {
                         if (!onCooldown) {
                             viewModel.killPlayer(killTarget)
-                            // Cooldown local de aceeasi durata cu cea implicita de pe
-                            // server (30s) - doar vizual, serverul e sursa de adevar.
-                            killCooldownUntilMillis = nowMillis + 30_000L
                         }
                     },
                     enabled = !onCooldown,
@@ -533,7 +546,7 @@ fun GameCanvasScreen(
                 ) {
                     Text(
                         if (onCooldown) {
-                            "🔪 Asteapta ${((killCooldownUntilMillis - nowMillis) / 1000L + 1).coerceAtLeast(0)}s"
+                            "🔪 Asteapta ${((viewModel.killCooldownUntilMillis.value - nowTick) / 1000L + 1).coerceAtLeast(0)}s"
                         } else {
                             "🔪 Omoara"
                         }
