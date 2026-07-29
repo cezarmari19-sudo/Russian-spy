@@ -406,6 +406,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                 else:
                     corpse = room.corpses.get(corpse_id) if room else None
                     if corpse is not None:
+                        print(f"[CorpseDebug] broadcasting corpse_found id={corpse.id} reported={corpse.reported} room_id={corpse.room_id}")
                         # Corpul dispare de pe harta pentru toti (reported=True),
                         # si identitatea victimei se dezvaluie - dar killerId
                         # ramane ascuns (reveal_killer=False), la fel ca inainte.
