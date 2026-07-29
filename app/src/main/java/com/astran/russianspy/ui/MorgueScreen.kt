@@ -71,7 +71,10 @@ fun MorgueScreen(
                             corpse = corpse,
                             canTamper = myRole == Role.RUSSIAN_SPY && !corpse.dnaExtracted,
                             onTamper = { viewModel.tamperCorpseDna(corpse.id) },
-                            onExtract = { viewModel.extractCorpseDna(corpse.id) }
+                            onExtract = { viewModel.extractCorpseDna(corpse.id) },
+                            onSendToLab = {
+                                corpse.extractedSampleId?.let { viewModel.moveDnaSampleToLab(it) }
+                            }
                         )
                     }
                 }
@@ -85,7 +88,8 @@ private fun CorpseCard(
     corpse: CorpseInfo,
     canTamper: Boolean,
     onTamper: () -> Unit,
-    onExtract: () -> Unit
+    onExtract: () -> Unit,
+    onSendToLab: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -119,11 +123,12 @@ private fun CorpseCard(
         Spacer(modifier = Modifier.height(12.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Butonul ramane disponibil si dupa prima extractie - permite
-            // retrimiterea mostrei deja recoltate la Laborator, oricand,
-            // la infinit (arhiva permanenta, simetrica cu cea de referinta).
+            // Inainte de extractie: butonul extrage ADN-ul de pe corp.
+            // Dupa extractie: butonul trimite mostra deja recoltata la
+            // Laborator (poate fi apasat oricand, la infinit - mostra nu se
+            // consuma niciodata, ramane si in morga si in laborator).
             Button(
-                onClick = onExtract,
+                onClick = if (corpse.dnaExtracted) onSendToLab else onExtract,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
             ) {
                 Text(if (corpse.dnaExtracted) "🧪 Trimite ADN la laborator" else "🧪 Extrage ADN")
