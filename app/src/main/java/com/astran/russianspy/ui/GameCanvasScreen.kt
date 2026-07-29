@@ -502,8 +502,20 @@ fun GameCanvasScreen(
         val myRole = viewModel.myRole.value
         if (myRole == Role.RUSSIAN_SPY && viewModel.activeMeeting.value == null) {
             val myRoomId = currentRoomIdLocal
+            // Multime de id-uri ale jucatorilor VII (si conectati), calculata
+            // din lobbyPlayers (sursa corecta de isAlive - vezi mai jos la
+            // alivePlayers). playerLivePositions NU e curatata cand un
+            // jucator moare (e curatata doar la deconectare), deci fara acest
+            // filtru, un cadavru ramanea vizibil ca tinta de omor pentru
+            // spion pana la urmatoarea reconectare/repozitionare a victimei -
+            // bugul raportat: "pot omora oameni morti".
+            val alivePlayerIds = viewModel.lobbyPlayers
+                .filter { it.connected && it.isAlive }
+                .map { it.id }
+                .toSet()
             val playersInRoom = viewModel.playerLivePositions.entries.filter { (pid, pos) ->
-                pid != viewModel.localPlayerId.value && pos.roomId == myRoomId
+                pid != viewModel.localPlayerId.value && pos.roomId == myRoomId &&
+                    pid in alivePlayerIds
             }
             val fbiTargetsNearby = playersInRoom.filter { (_, pos) ->
                 kotlin.math.hypot(playerX - pos.x, playerY - pos.y) <= KILL_INTERACT_RADIUS
