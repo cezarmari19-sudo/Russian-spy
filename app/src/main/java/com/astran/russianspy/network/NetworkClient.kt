@@ -62,6 +62,9 @@ sealed class ServerEvent {
     /** Mostrele folosite intr-o comparare au fost sterse de pe server - clientul
      * trebuie sa le elimine din lista locala si din sloturile masinii. */
     data class DnaSamplesConsumed(val harvestedSampleId: String?, val referenceSampleId: String?) : ServerEvent()
+    /** Trimis STRICT ucigasului dupa un omor reusit, cu cooldown-ul REAL al
+     * camerei (nu o valoare fixa presupusa de client). */
+    data class KillCooldownStarted(val cooldownSeconds: Float) : ServerEvent()
 }
 
 /** Un task alocat spionului: tip, camera + punct exact x/y unde trebuie facut, si daca e completat acum. */
@@ -457,6 +460,9 @@ class NetworkClient(
                     harvestedSampleId = if (json.isNull("harvestedSampleId")) null else json.optString("harvestedSampleId", null),
                     referenceSampleId = if (json.isNull("referenceSampleId")) null else json.optString("referenceSampleId", null)
                 )
+            )
+            "kill_cooldown_started" -> onEvent(
+                ServerEvent.KillCooldownStarted(cooldownSeconds = json.optDouble("cooldownSeconds", 30.0).toFloat())
             )
         }
     }
