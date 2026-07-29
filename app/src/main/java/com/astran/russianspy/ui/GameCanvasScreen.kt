@@ -652,6 +652,25 @@ fun GameCanvasScreen(
             )
         }
 
+        // TEMPORAR - banner de debug vizibil pe ecran, ca sa vedem starea
+        // corpurilor primite de la server fara Logcat/Android Studio. De
+        // scos dupa ce gasim bug-ul "corpul ramane dupa report".
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(top = 90.dp, start = 8.dp)
+                .background(Color(0xCC000000))
+                .padding(6.dp)
+        ) {
+            Text(
+                text = viewModel.corpses.joinToString("\n") {
+                    "id=${it.id.takeLast(6)} rep=${it.reported} room=${it.roomId} morgue=${it.inMorgue}"
+                }.ifBlank { "no corpses" },
+                color = Color(0xFF00FF00),
+                fontSize = 11.sp
+            )
+        }
+
         // Ecran de spectator - afisat DOAR pe clientul victimei, dupa "you_were_killed".
         // Miscarea si joystick-ul sunt deja blocate mai sus; aici doar semnalam
         // clar starea, fara sa ascundem harta (jucatorul mort poate tot urmari
