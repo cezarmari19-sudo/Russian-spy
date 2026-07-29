@@ -31,10 +31,11 @@ fun MorgueScreen(
     viewModel: GameViewModel,
     onExit: () -> Unit
 ) {
-    // Corpurile inca "de lucru" in morga - odata ce ADN-ul le-a fost extras,
-    // dispar din aceasta lista (nu mai e nimic de facut pe ele aici; mostra
-    // recoltata rezultata se gaseste/gestioneaza din Laborator).
-    val corpses = viewModel.corpses.filter { it.inMorgue && !it.dnaExtracted }
+    // Corpurile din morga - RAMAN AICI LA INFINIT, ca o arhiva (la fel ca
+    // arhiva de referinta), chiar si dupa ce ADN-ul le-a fost extras: butonul
+    // de extractie ramane disponibil, permitand retrimiterea mostrei deja
+    // recoltate la Laborator oricand e nevoie (nu se mai consuma niciodata).
+    val corpses = viewModel.corpses.filter { it.inMorgue }
     val myRole = viewModel.myRole.value
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0D0F)) {
@@ -118,13 +119,14 @@ private fun CorpseCard(
         Spacer(modifier = Modifier.height(12.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (!corpse.dnaExtracted) {
-                Button(
-                    onClick = onExtract,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
-                ) {
-                    Text("🧪 Extrage ADN")
-                }
+            // Butonul ramane disponibil si dupa prima extractie - permite
+            // retrimiterea mostrei deja recoltate la Laborator, oricand,
+            // la infinit (arhiva permanenta, simetrica cu cea de referinta).
+            Button(
+                onClick = onExtract,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C))
+            ) {
+                Text(if (corpse.dnaExtracted) "🧪 Trimite ADN la laborator" else "🧪 Extrage ADN")
             }
             // Butonul de stricare a probei - vizibil STRICT spionului si doar
             // cat timp ADN-ul inca nu a fost extras (dupa extractie, mostra
