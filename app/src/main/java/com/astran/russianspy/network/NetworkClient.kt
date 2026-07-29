@@ -91,7 +91,8 @@ data class CorpseInfo(
     val reported: Boolean,
     val inMorgue: Boolean = false,
     val dnaExtracted: Boolean = false,
-    val dnaCompleteness: Int? = null
+    val dnaCompleteness: Int? = null,
+    val extractedSampleId: String? = null
 )
 
 /** isAlive e ESENTIAL pentru ecranul de vot din meeting - fara el, jucatorii
@@ -477,7 +478,8 @@ class NetworkClient(
         reported = c.optBoolean("reported", false),
         inMorgue = c.optBoolean("inMorgue", false),
         dnaExtracted = c.optBoolean("dnaExtracted", false),
-        dnaCompleteness = if (c.isNull("dnaCompleteness")) null else c.optInt("dnaCompleteness")
+        dnaCompleteness = if (c.isNull("dnaCompleteness")) null else c.optInt("dnaCompleteness"),
+        extractedSampleId = if (c.isNull("extractedSampleId")) null else c.optString("extractedSampleId")
     )
 
     private fun parseDnaSample(s: JSONObject): DnaSampleInfo = DnaSampleInfo(
