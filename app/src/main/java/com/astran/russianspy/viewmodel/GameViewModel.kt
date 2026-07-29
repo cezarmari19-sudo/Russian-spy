@@ -595,12 +595,14 @@ class GameViewModel : ViewModel() {
             is ServerEvent.CorpseFound -> {
                 // Inlocuim intrarea daca exista deja (ex: dupa raport, cand
                 // "reported" se schimba), altfel o adaugam noua.
+                android.util.Log.d("CorpseDebug", "CorpseFound id=${event.corpse.id} reported=${event.corpse.reported} roomId=${event.corpse.roomId}")
                 val index = corpses.indexOfFirst { it.id == event.corpse.id }
                 if (index >= 0) {
                     corpses[index] = event.corpse
                 } else {
                     corpses.add(event.corpse)
                 }
+                android.util.Log.d("CorpseDebug", "corpses now: ${corpses.map { it.id to it.reported }}")
             }
             is ServerEvent.DnaArchiveReady -> {
                 // Inlocuim doar mostrele de referinta - cele recoltate (daca
