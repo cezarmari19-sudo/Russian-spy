@@ -631,16 +631,15 @@ class GameManager:
     def move_dna_sample_to_lab(
         self, room_code: str, requesting_player_id: str, sample_id: str
     ) -> tuple[Optional[str], Optional[DnaSample]]:
-        """Muta o mostra RECOLTATA (din morga) in Laboratorul Criminalistic -
-        aceasta chiar se muta (nu exista decat o singura copie, legata de un
-        corp anume). Pentru o mostra de REFERINTA (din arhiva), NU se muta
-        originalul (care ar disparea din arhiva pentru toti ceilalti) - in
-        schimb se creeaza o COPIE noua, independenta, cu propriul id, trimisa
-        direct in laborator; originalul ramane intact in arhiva, disponibil
-        sa fie trimis din nou oricand, de oricine. Copia trimisa la laborator
-        e stearsa automat dupa ce e folosita intr-o comparare (vezi
-        compare_dna_samples), sau ramane in laborator pana atunci daca nu mai
-        e folosita.
+        """Muta o mostra spre Laboratorul Criminalistic. Atat pentru o mostra
+        RECOLTATA (din morga) cat si pentru una de REFERINTA (din arhiva), NU
+        se muta originalul (care ar disparea din morga/arhiva pentru toti
+        ceilalti) - in schimb se creeaza o COPIE noua, independenta, cu
+        propriul id, trimisa direct in laborator; originalul ramane intact,
+        disponibil sa fie trimis din nou oricand, de oricine. Copia trimisa
+        la laborator e stearsa automat dupa ce e folosita intr-o comparare
+        (vezi compare_dna_samples), sau ramane in laborator pana atunci daca
+        nu mai e folosita.
         Returneaza (eroare, None) daca esueaza, sau (None, mostra_trimisa) daca
         reuseste - main.py foloseste mostra intoarsa pentru broadcast (poate fi
         o copie noua, cu alt id decat sample_id primit, pentru referinte)."""
