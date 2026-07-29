@@ -659,11 +659,24 @@ class GameManager:
             room.dna_samples[copy_id] = copy_sample
             return None, copy_sample
         else:
-            # Recoltata: se muta efectiv (exista o singura mostra per corp).
+            # Recoltata: la fel ca la referinta, se creeaza o COPIE noua
+            # trimisa la laborator - originalul RAMANE in morga, la infinit,
+            # disponibil sa fie retrimis oricand (arhiva permanenta a probei
+            # recoltate, simetrica cu arhiva de referinta).
             if sample.room_id != "morgue":
                 return "Mostra nu mai poate fi transportata de aici", None
-            sample.room_id = "forensics"
-            return None, sample
+            copy_id = f"{sample.id}_copy_{random.randint(100000, 999999)}"
+            copy_sample = DnaSample(
+                id=copy_id,
+                room_id="forensics",
+                actual_owner_id=sample.actual_owner_id,
+                displayed_owner_id=sample.displayed_owner_id,
+                completeness=sample.completeness,
+                is_reference=False,
+                source_corpse_id=sample.source_corpse_id,
+            )
+            room.dna_samples[copy_id] = copy_sample
+            return None, copy_sample
 
     def place_sample_in_lab_machine(
         self, room_code: str, requesting_player_id: str, sample_id: str
@@ -751,12 +764,11 @@ class GameManager:
 
         # Dupa folosire, mostrele din masina "dispar" - nu mai raman in
         # laborator, gata pentru o comparare urmatoare (fiecare comparare e
-        # o singura folosire). Mostra RECOLTATA dispare definitiv (era
-        # oricum unica, legata de un singur corp - o data comparata, nu mai
-        # e nevoie de ea). Mostra de REFERINTA era deja o COPIE creata la
-        # move_dna_sample_to_lab (originalul ramane intact, nealterat, in
-        # arhiva - vezi move_dna_sample_to_lab), deci stergerea ei aici NU
-        # afecteaza arhiva, care ramane disponibila pentru viitoare trimiteri.
+        # o singura folosire). Atat mostra RECOLTATA cat si cea de REFERINTA
+        # puse aici sunt intotdeauna COPII create la move_dna_sample_to_lab
+        # (originalele raman intacte, unul in morga si unul in arhiva - vezi
+        # move_dna_sample_to_lab), deci stergerea lor aici NU afecteaza nici
+        # morga, nici arhiva, care raman disponibile pentru viitoare trimiteri.
         room.dna_samples.pop(harvested_id, None)
         room.dna_samples.pop(reference_id, None)
         room.lab_machine_harvested_sample_id = None
