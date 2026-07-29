@@ -563,8 +563,6 @@ class GameManager:
             return "Corpul nu e in morga"
         if corpse.dna_extracted:
             return "ADN-ul a fost deja extras - nu mai poate fi alterat"
-        if spy.current_room_id != "morgue":
-            return "Trebuie sa fii in morga"
 
         corpse.dna_completeness = random.randint(0, 30)
         return None
@@ -589,8 +587,6 @@ class GameManager:
         player = room.players.get(requesting_player_id)
         if player is None or not player.is_alive:
             return "Doar un jucator viu poate extrage ADN", None
-        if player.current_room_id != "morgue":
-            return "Trebuie sa fii in morga", None
 
         corpse = room.corpses.get(corpse_id)
         if corpse is None:
@@ -647,10 +643,9 @@ class GameManager:
             return "Mostra nu exista", None
 
         if sample.is_reference:
-            # Referinta: jucatorul trebuie sa fie fizic in arhiva, dar
-            # originalul NU se muta - se trimite o copie noua la laborator.
-            if player.current_room_id != "dna_archive":
-                return "Trebuie sa fii in arhiva ADN", None
+            # Referinta: se creeaza mereu o copie noua, trimisa direct la
+            # laborator - originalul NU se muta niciodata (ramane disponibil
+            # in arhiva pentru oricine, oricand).
             copy_id = f"{sample.id}_copy_{random.randint(100000, 999999)}"
             copy_sample = DnaSample(
                 id=copy_id,
@@ -665,8 +660,6 @@ class GameManager:
             return None, copy_sample
         else:
             # Recoltata: se muta efectiv (exista o singura mostra per corp).
-            if player.current_room_id != sample.room_id:
-                return "Trebuie sa fii in camera unde se afla mostra", None
             if sample.room_id != "morgue":
                 return "Mostra nu mai poate fi transportata de aici", None
             sample.room_id = "forensics"
@@ -688,8 +681,6 @@ class GameManager:
         player = room.players.get(requesting_player_id)
         if player is None or not player.is_alive:
             return "Doar un jucator viu poate folosi laboratorul"
-        if player.current_room_id != "forensics":
-            return "Trebuie sa fii in laboratorul criminalistic"
 
         sample = room.dna_samples.get(sample_id)
         if sample is None:
@@ -723,8 +714,6 @@ class GameManager:
         player = room.players.get(requesting_player_id)
         if player is None or not player.is_alive:
             return "Doar un jucator viu poate folosi laboratorul", None
-        if player.current_room_id != "forensics":
-            return "Trebuie sa fii in laboratorul criminalistic", None
 
         harvested_id = room.lab_machine_harvested_sample_id
         reference_id = room.lab_machine_reference_sample_id
