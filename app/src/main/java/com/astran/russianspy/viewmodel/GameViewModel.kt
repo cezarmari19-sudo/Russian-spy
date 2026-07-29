@@ -226,8 +226,21 @@ class GameViewModel : ViewModel() {
     private val _isDead = mutableStateOf(false)
     val isDead: State<Boolean> = _isDead
 
+    // Momentul (millis, System.currentTimeMillis) pana la care spionul NU poate
+    // omori din nou - tinut aici (nu in "remember" local pe GameCanvasScreen)
+    // ca sa SUPRAVIETUIASCA navigarii catre alte ecrane (Morga, Arhiva ADN,
+    // Laborator, Camere) - altfel valoarea locala se reseta la 0 de fiecare
+    // data cand ecranul era recompus de la zero, facand cooldown-ul sa para
+    // "resetat" desi serverul inca il respingea (BUG raportat: se putea omori
+    // din nou aproape imediat). 0L inseamna "niciun cooldown activ acum".
+    private val _killCooldownUntilMillis = mutableStateOf(0L)
+    val killCooldownUntilMillis: State<Long> = _killCooldownUntilMillis
+
     /** Apelat de spion cand incearca sa omoare un agent FBI din aceeasi camera. */
     fun killPlayer(targetPlayerId: String) {
+        // Nu trimitem cererea daca stim deja ca suntem pe cooldown - serverul
+        // oricum ar respinge-o, dar evitam spam-ul de mesaje si eroarea vizibila.
+        if (System.currentTimeMillis() < _killCooldownUntilMillis.value) return
         networkClient?.sendKillPlayer(targetPlayerId)
     }
 
@@ -332,6 +345,7 @@ class GameViewModel : ViewModel() {
         _dnaComparisonResult.value = null
         playersWhoVoted.clear()
         _isDead.value = false
+        _killCooldownUntilMillis.value = 0L
     }
 
     /**
@@ -372,6 +386,7 @@ class GameViewModel : ViewModel() {
         _dnaComparisonResult.value = null
         playersWhoVoted.clear()
         _isDead.value = false
+        _killCooldownUntilMillis.value = 0L
     }
 
     private val _localPlayerId = mutableStateOf("")
@@ -651,6 +666,9 @@ class GameViewModel : ViewModel() {
                 if (_labMachineReferenceSampleId.value == event.referenceSampleId) {
                     _labMachineReferenceSampleId.value = null
                 }
+            }
+            is ServerEvent.KillCooldownStarted -> {
+                _killCooldownUntilMillis.value = System.currentTimeMillis() + (event.cooldownSeconds * 1000L).toLong()
             }
             is ServerEvent.YouWereKilled -> {
                 _isDead.value = true
