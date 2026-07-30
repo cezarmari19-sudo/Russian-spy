@@ -138,7 +138,8 @@ fun WaitingRoomScreen(
     }
 
     val roomCode = gameState?.roomCode ?: ""
-    val canStart = isHost && lobbyPlayers.size >= MIN_PLAYERS
+    val connectedPlayerCount = lobbyPlayers.count { it.connected }
+    val canStart = isHost && connectedPlayerCount >= MIN_PLAYERS
 
     val isNearMonitor = kotlin.math.hypot(
         (playerX - LobbyRoomLayout.MONITOR_X).toDouble(),
@@ -388,7 +389,7 @@ fun WaitingRoomScreen(
             ) {
                 Text(roomCode, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp)
                 Text(
-                    "JUCATORI (${lobbyPlayers.size}/$MAX_PLAYERS)",
+                    "JUCATORI (${connectedPlayerCount}/$MAX_PLAYERS)",
                     color = Color(0xFFB0B0B0),
                     fontSize = 11.sp
                 )
