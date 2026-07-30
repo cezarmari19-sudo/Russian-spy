@@ -46,6 +46,18 @@ sealed class ServerEvent {
     ) : ServerEvent()
     data class Error(val message: String) : ServerEvent()
 
+    // --- Camera fizica de lobby (hol de asteptare cu monitor si dulap) ---
+    /** Un jucator s-a miscat in camera FIZICA de lobby (nu jocul propriu-zis). */
+    data class LobbyPositionUpdate(val playerId: String, val x: Float, val y: Float) : ServerEvent()
+    /** Pozitiile initiale ale tuturor jucatorilor din lobby, primite o data la conectare. */
+    data class LobbyPositionsSnapshot(val positions: List<LobbyPositionInfo>) : ServerEvent()
+    /** Un mesaj nou de chat trimis in lobby (broadcast catre toata camera). */
+    data class LobbyChatMessageEvent(val message: LobbyChatMessageInfo) : ServerEvent()
+    /** Istoricul de chat (max 40 mesaje), primit o data la conectare. */
+    data class LobbyChatHistory(val messages: List<LobbyChatMessageInfo>) : ServerEvent()
+    /** Confirmare privata ca raportul a fost inregistrat cu succes. */
+    object ReportSubmitted : ServerEvent()
+
     // --- Morga si ADN ---
     /** Arhiva de ADN populata automat la inceputul rundei - o mostra de referinta per jucator. */
     data class DnaArchiveReady(val samples: List<DnaSampleInfo>) : ServerEvent()
@@ -106,6 +118,22 @@ data class LobbyPlayerInfo(
     val connected: Boolean,
     val isAlive: Boolean = true,
     val color: String = "#9E9E9E"
+)
+
+/** Pozitia unui jucator in camera FIZICA de lobby (hol de asteptare). */
+data class LobbyPositionInfo(
+    val playerId: String,
+    val x: Float,
+    val y: Float
+)
+
+/** Un mesaj de chat trimis in camera de asteptare (lobby). */
+data class LobbyChatMessageInfo(
+    val id: String,
+    val senderId: String,
+    val senderName: String,
+    val text: String,
+    val sentAtMillis: Long
 )
 
 /** O mostra de ADN. isReference=true => mostra de referinta din Arhiva ADN
@@ -313,6 +341,54 @@ class NetworkClient(
                 }
                 onEvent(ServerEvent.PositionsSnapshot(list))
             }
+            "lobby_position_update" -> onEvent(
+                ServerEvent.LobbyPositionUpdate(
+                    playerId = json.getString("playerId"),
+                    x = json.getDouble("x").toFloat(),
+                    y = json.getDouble("y").toFloat()
+                )
+            )
+            "lobby_positions_snapshot" -> {
+                val arr = json.getJSONArray("positions")
+                val list = (0 until arr.length()).map { i ->
+                    val entry = arr.getJSONObject(i)
+                    LobbyPositionInfo(
+                        playerId = entry.getString("playerId"),
+                        x = entry.getDouble("x").toFloat(),
+                        y = entry.getDouble("y").toFloat()
+                    )
+                }
+                onEvent(ServerEvent.LobbyPositionsSnapshot(list))
+            }
+            "lobby_chat_message" -> {
+                val m = json.getJSONObject("message")
+                onEvent(
+                    ServerEvent.LobbyChatMessageEvent(
+                        LobbyChatMessageInfo(
+                            id = m.getString("id"),
+                            senderId = m.getString("senderId"),
+                            senderName = m.getString("senderName"),
+                            text = m.getString("text"),
+                            sentAtMillis = m.getLong("sentAtMillis")
+                        )
+                    )
+                )
+            }
+            "lobby_chat_history" -> {
+                val arr = json.getJSONArray("messages")
+                val list = (0 until arr.length()).map { i ->
+                    val m = arr.getJSONObject(i)
+                    LobbyChatMessageInfo(
+                        id = m.getString("id"),
+                        senderId = m.getString("senderId"),
+                        senderName = m.getString("senderName"),
+                        text = m.getString("text"),
+                        sentAtMillis = m.getLong("sentAtMillis")
+                    )
+                }
+                onEvent(ServerEvent.LobbyChatHistory(list))
+            }
+            "report_submitted" -> onEvent(ServerEvent.ReportSubmitted)
             "game_started" -> onEvent(
                 ServerEvent.GameStarted(yourRole = json.getString("yourRole"))
             )
@@ -561,6 +637,40 @@ class NetworkClient(
         send(JSONObject().apply {
             put("action", "disable_spy_device")
             put("taskId", taskId)
+        })
+    }
+
+    /** Trimite pozitia curenta in camera FIZICA de lobby (hol de asteptare). */
+    fun sendLobbyPositionUpdate(x: Float, y: Float) {
+        send(JSONObject().apply {
+            put("action", "lobby_position_update")
+            put("x", x.toDouble())
+            put("y", y.toDouble())
+        })
+    }
+
+    /** Alege o culoare din dulap - serverul valideaza ca e libera in camera. */
+    fun sendChoosePlayerColor(color: String) {
+        send(JSONObject().apply {
+            put("action", "choose_player_color")
+            put("color", color)
+        })
+    }
+
+    /** Trimite un mesaj in chat-ul de lobby. */
+    fun sendLobbyChatMessage(textMessage: String) {
+        send(JSONObject().apply {
+            put("action", "send_lobby_chat")
+            put("text", textMessage)
+        })
+    }
+
+    /** Raporteaza un alt jucator (motiv: hacking, harassment, bad_language, name). */
+    fun sendPlayerReport(targetPlayerId: String, reason: String) {
+        send(JSONObject().apply {
+            put("action", "submit_player_report")
+            put("targetPlayerId", targetPlayerId)
+            put("reason", reason)
         })
     }
 
