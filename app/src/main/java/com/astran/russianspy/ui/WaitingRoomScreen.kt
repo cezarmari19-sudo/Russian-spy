@@ -21,7 +21,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -32,22 +37,45 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.astran.russianspy.data.LobbyRoomLayout
 import com.astran.russianspy.data.PlayerPrefs
+import com.astran.russianspy.model.RoomFunction
 import com.astran.russianspy.network.AccountApi
 import com.astran.russianspy.network.LobbyChatMessageInfo
 import com.astran.russianspy.network.LobbyPlayerInfo
-import com.astran.russianspy.ui.theme.SectionLabel
-import com.astran.russianspy.ui.theme.TacticalBackground
-import com.astran.russianspy.ui.theme.TacticalButton
 import com.astran.russianspy.ui.theme.TacticalColors
 import com.astran.russianspy.viewmodel.GameViewModel
 import com.astran.russianspy.viewmodel.RemovalReason
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 private const val MIN_PLAYERS = 1
 private const val MAX_PLAYERS = 15
+private const val LOBBY_TILE_SCALE = 1.6f
 private const val LOBBY_JOYSTICK_BASE_RADIUS = 90f
 private const val LOBBY_JOYSTICK_KNOB_RADIUS = 36f
+private const val LOBBY_PLAYER_RADIUS = 12f
+private const val LOBBY_INTERACT_RADIUS = LobbyRoomLayout.INTERACT_RADIUS
 
+private fun isLobbyWalkable(px: Float, py: Float, radius: Float): Boolean {
+    val samplePoints = 8
+    for (i in 0 until samplePoints) {
+        val angle = (2.0 * Math.PI * i / samplePoints)
+        val sampleX = px + radius * cos(angle).toFloat()
+        val sampleY = py + radius * sin(angle).toFloat()
+        if (LobbyRoomLayout.rooms.none { it.containsPoint(sampleX, sampleY) }) {
+            return false
+        }
+    }
+    return LobbyRoomLayout.rooms.any { it.containsPoint(px, py) }
+}
+
+/**
+ * Cladirea MICA de asteptare (lobby), pe tot ecranul, in acelasi stil vizual
+ * ca jocul propriu-zis (camere desenate vectorial, fog-of-war, joystick).
+ * 3 camere mici legate prin 2 holuri scurte - vezi LobbyRoomLayout pentru
+ * geometria exacta. Butonul de Start (doar host) ramane fix pe ecran, cu
+ * fundal usor (nu opac), ca sa nu blocheze vederea camerei din spate.
+ */
 @Composable
 fun WaitingRoomScreen(
     viewModel: GameViewModel,
@@ -55,12 +83,12 @@ fun WaitingRoomScreen(
     onLeaveLobby: () -> Unit,
     onRemovedFromRoom: (RemovalReason) -> Unit
 ) {
-    val gameState by viewModel.gameState
     val isHost by viewModel.isHost
     val lobbyPlayers = viewModel.lobbyPlayers
     val gameStarted by viewModel.gameStarted
     val errorMessage by viewModel.errorMessage
     val removalReason by viewModel.removalReason
+    val gameState by viewModel.gameState
 
     var showSettings by remember { mutableStateOf(false) }
     var showInviteDialog by remember { mutableStateOf(false) }
@@ -75,10 +103,10 @@ fun WaitingRoomScreen(
     var joystickOrigin by remember { mutableStateOf<Offset?>(null) }
     var joystickKnob by remember { mutableStateOf<Offset?>(null) }
 
+    val wallSegments = remember { buildWallSegmentsFromMergedRooms(LobbyRoomLayout.rooms) }
+
     LaunchedEffect(gameStarted) {
-        if (gameStarted) {
-            onGameStarted()
-        }
+        if (gameStarted) onGameStarted()
     }
 
     LaunchedEffect(removalReason) {
@@ -95,13 +123,11 @@ fun WaitingRoomScreen(
         while (true) {
             withFrameNanos { }
             if (joystickDirX != 0f || joystickDirY != 0f) {
-                val speed = 4.5f
-                val newX = (playerX + joystickDirX * speed)
-                    .coerceIn(20f, LobbyRoomLayout.ROOM_WIDTH - 20f)
-                val newY = (playerY + joystickDirY * speed)
-                    .coerceIn(20f, LobbyRoomLayout.ROOM_HEIGHT - 20f)
-                playerX = newX
-                playerY = newY
+                val speed = 5f
+                val newX = playerX + joystickDirX * speed
+                val newY = playerY + joystickDirY * speed
+                if (isLobbyWalkable(newX, playerY, LOBBY_PLAYER_RADIUS)) playerX = newX
+                if (isLobbyWalkable(playerX, newY, LOBBY_PLAYER_RADIUS)) playerY = newY
 
                 frameCounter++
                 if (frameCounter % 3 == 0) {
@@ -114,280 +140,331 @@ fun WaitingRoomScreen(
     val roomCode = gameState?.roomCode ?: ""
     val canStart = isHost && lobbyPlayers.size >= MIN_PLAYERS
 
-    val distToMonitor = kotlin.math.hypot(
+    val isNearMonitor = kotlin.math.hypot(
         (playerX - LobbyRoomLayout.MONITOR_X).toDouble(),
         (playerY - LobbyRoomLayout.MONITOR_Y).toDouble()
-    )
-    val isNearMonitor = distToMonitor <= LobbyRoomLayout.INTERACT_RADIUS
+    ) <= LOBBY_INTERACT_RADIUS
 
-    val distToWardrobe = kotlin.math.hypot(
+    val isNearWardrobe = kotlin.math.hypot(
         (playerX - LobbyRoomLayout.WARDROBE_X).toDouble(),
         (playerY - LobbyRoomLayout.WARDROBE_Y).toDouble()
-    )
-    val isNearWardrobe = distToWardrobe <= LobbyRoomLayout.INTERACT_RADIUS
+    ) <= LOBBY_INTERACT_RADIUS
 
-    TacticalBackground {
-        Box(modifier = Modifier.fillMaxSize()) {
-
-            Column(modifier = Modifier.fillMaxSize()) {
-                Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                    IconButton(
-                        onClick = {
-                            viewModel.leaveLobby()
-                            onLeaveLobby()
-                        },
-                        modifier = Modifier.align(Alignment.CenterStart)
-                    ) {
-                        Text("⬅", fontSize = 20.sp, color = TacticalColors.TextPrimary)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { startPos ->
+                        joystickOrigin = startPos
+                        joystickKnob = startPos
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        val origin = joystickOrigin ?: return@detectDragGestures
+                        val rawOffset = change.position - origin
+                        val distance = sqrt(rawOffset.x * rawOffset.x + rawOffset.y * rawOffset.y)
+                        val clamped = if (distance > LOBBY_JOYSTICK_BASE_RADIUS) {
+                            Offset(
+                                rawOffset.x / distance * LOBBY_JOYSTICK_BASE_RADIUS,
+                                rawOffset.y / distance * LOBBY_JOYSTICK_BASE_RADIUS
+                            )
+                        } else rawOffset
+                        joystickKnob = origin + clamped
+                        joystickDirX = clamped.x / LOBBY_JOYSTICK_BASE_RADIUS
+                        joystickDirY = clamped.y / LOBBY_JOYSTICK_BASE_RADIUS
+                    },
+                    onDragEnd = {
+                        joystickOrigin = null
+                        joystickKnob = null
+                        joystickDirX = 0f
+                        joystickDirY = 0f
+                    },
+                    onDragCancel = {
+                        joystickOrigin = null
+                        joystickKnob = null
+                        joystickDirX = 0f
+                        joystickDirY = 0f
                     }
-
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        SectionLabel(text = "Cod camera")
-                        Text(
-                            text = roomCode,
-                            color = TacticalColors.TextPrimary,
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 5.sp
-                        )
-                    }
-
-                    Row(modifier = Modifier.align(Alignment.CenterEnd)) {
-                        IconButton(onClick = { showInviteDialog = true }) {
-                            Text("👥")
-                        }
-                    }
-                }
-
-                Text(
-                    text = "JUCATORI (${lobbyPlayers.size}/$MAX_PLAYERS)",
-                    color = TacticalColors.TextSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp)
                 )
+            }
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRect(color = Color.Black, topLeft = Offset.Zero, size = size)
 
-                Spacer(modifier = Modifier.height(8.dp))
+            val screenCenterX = size.width / 2f
+            val screenCenterY = size.height / 2f
 
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFF14171C))
-                        .border(1.dp, TacticalColors.Border, RoundedCornerShape(16.dp))
-                        .pointerInput(Unit) {
-                            detectDragGestures(
-                                onDragStart = { startPos ->
-                                    joystickOrigin = startPos
-                                    joystickKnob = startPos
-                                },
-                                onDrag = { change, _ ->
-                                    change.consume()
-                                    val origin = joystickOrigin ?: return@detectDragGestures
-                                    val rawOffset = change.position - origin
-                                    val distance = sqrt(rawOffset.x * rawOffset.x + rawOffset.y * rawOffset.y)
-                                    val clamped = if (distance > LOBBY_JOYSTICK_BASE_RADIUS) {
-                                        Offset(
-                                            rawOffset.x / distance * LOBBY_JOYSTICK_BASE_RADIUS,
-                                            rawOffset.y / distance * LOBBY_JOYSTICK_BASE_RADIUS
-                                        )
-                                    } else rawOffset
-                                    joystickKnob = origin + clamped
-                                    joystickDirX = clamped.x / LOBBY_JOYSTICK_BASE_RADIUS
-                                    joystickDirY = clamped.y / LOBBY_JOYSTICK_BASE_RADIUS
-                                },
-                                onDragEnd = {
-                                    joystickOrigin = null
-                                    joystickKnob = null
-                                    joystickDirX = 0f
-                                    joystickDirY = 0f
-                                },
-                                onDragCancel = {
-                                    joystickOrigin = null
-                                    joystickKnob = null
-                                    joystickDirX = 0f
-                                    joystickDirY = 0f
-                                }
-                            )
-                        }
-                ) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val scaleX = size.width / LobbyRoomLayout.ROOM_WIDTH
-                        val scaleY = size.height / LobbyRoomLayout.ROOM_HEIGHT
-                        val scale = minOf(scaleX, scaleY)
-                        val offsetX = (size.width - LobbyRoomLayout.ROOM_WIDTH * scale) / 2f
-                        val offsetY = (size.height - LobbyRoomLayout.ROOM_HEIGHT * scale) / 2f
+            fun worldToScreen(wx: Float, wy: Float): Offset {
+                val dx = (wx - playerX) * LOBBY_TILE_SCALE
+                val dy = (wy - playerY) * LOBBY_TILE_SCALE
+                return Offset(screenCenterX + dx, screenCenterY + dy)
+            }
 
-                        fun toScreen(wx: Float, wy: Float) = Offset(
-                            offsetX + wx * scale,
-                            offsetY + wy * scale
-                        )
+            val visibilityPolygonWorld = computeVisibilityPolygon(
+                originX = playerX,
+                originY = playerY,
+                segments = wallSegments,
+                viewRadius = 900f
+            )
+            val visibilityPathScreen = Path().apply {
+                if (visibilityPolygonWorld.isNotEmpty()) {
+                    val first = worldToScreen(visibilityPolygonWorld[0].x, visibilityPolygonWorld[0].y)
+                    moveTo(first.x, first.y)
+                    for (i in 1 until visibilityPolygonWorld.size) {
+                        val p = worldToScreen(visibilityPolygonWorld[i].x, visibilityPolygonWorld[i].y)
+                        lineTo(p.x, p.y)
+                    }
+                    close()
+                }
+            }
 
-                        val monitorPos = toScreen(LobbyRoomLayout.MONITOR_X, LobbyRoomLayout.MONITOR_Y)
-                        drawRect(
-                            color = Color(0xFF1976D2),
-                            topLeft = Offset(monitorPos.x - 34f, monitorPos.y - 24f),
-                            size = Size(68f, 48f)
-                        )
-                        drawRect(
-                            color = Color(0xFF0D47A1),
-                            topLeft = Offset(monitorPos.x - 34f, monitorPos.y - 24f),
-                            size = Size(68f, 48f),
-                            style = Stroke(width = 3f)
-                        )
+            clipPath(visibilityPathScreen) {
+                LobbyRoomLayout.rooms.forEach { room ->
+                    val topLeft = worldToScreen(room.x, room.y)
+                    val sizePx = Size(room.width * LOBBY_TILE_SCALE, room.height * LOBBY_TILE_SCALE)
 
-                        val wardrobePos = toScreen(LobbyRoomLayout.WARDROBE_X, LobbyRoomLayout.WARDROBE_Y)
-                        drawRect(
-                            color = Color(0xFF6D4C41),
-                            topLeft = Offset(wardrobePos.x - 28f, wardrobePos.y - 32f),
-                            size = Size(56f, 64f)
-                        )
-                        drawRect(
-                            color = Color(0xFF3E2723),
-                            topLeft = Offset(wardrobePos.x - 28f, wardrobePos.y - 32f),
-                            size = Size(56f, 64f),
-                            style = Stroke(width = 3f)
-                        )
-                        drawLine(
-                            color = Color(0xFF3E2723),
-                            start = Offset(wardrobePos.x, wardrobePos.y - 32f),
-                            end = Offset(wardrobePos.x, wardrobePos.y + 32f),
-                            strokeWidth = 3f
-                        )
-
-                        viewModel.lobbyPlayerPositions.entries.forEach { (pid, pos) ->
-                            if (pid == viewModel.localPlayerId.value) return@forEach
-                            val info = viewModel.lobbyPlayers.firstOrNull { it.id == pid }
-                            val hex = info?.color ?: "#9E9E9E"
-                            val color = try {
-                                Color(android.graphics.Color.parseColor(hex))
-                            } catch (e: Exception) {
-                                Color(0xFF9E9E9E)
+                    if (room.function == RoomFunction.HALLWAY) {
+                        translate(left = topLeft.x, top = topLeft.y) {
+                            clipRect(left = 0f, top = 0f, right = sizePx.width, bottom = sizePx.height) {
+                                drawHallwayDetailed(sizePx.width, sizePx.height)
                             }
-                            val screenPos = toScreen(pos.x, pos.y)
-                            drawCircle(color = color, radius = 14f * scale, center = screenPos)
-                            drawCircle(
-                                color = Color.Black,
-                                radius = 14f * scale,
-                                center = screenPos,
-                                style = Stroke(width = 2f)
-                            )
                         }
-
-                        val myHex = viewModel.lobbyPlayers
-                            .firstOrNull { it.id == viewModel.localPlayerId.value }?.color ?: "#FFD700"
-                        val myColor = try {
-                            Color(android.graphics.Color.parseColor(myHex))
-                        } catch (e: Exception) {
-                            Color(0xFFFFD700)
+                    } else {
+                        // Camera centrala si cele 2 camere laterale - desen simplu
+                        // dedicat (nu RoomArt, care are layout-uri fixe pentru
+                        // camerele jocului propriu-zis), dar in aceeasi paleta
+                        // "FBI misterios".
+                        val baseColor = when (room.id) {
+                            "lobby_central" -> Color(0xFF1A1D22)
+                            "lobby_settings" -> Color(0xFF141A24)
+                            "lobby_wardrobe" -> Color(0xFF241A14)
+                            else -> Color(0xFF1A1D22)
                         }
-                        val myScreenPos = toScreen(playerX, playerY)
-                        drawCircle(color = myColor, radius = 15f * scale, center = myScreenPos)
-                        drawCircle(
-                            color = Color.Black,
-                            radius = 15f * scale,
-                            center = myScreenPos,
+                        drawRect(color = baseColor, topLeft = topLeft, size = sizePx)
+                        drawRect(
+                            color = Color(0xFF05070A),
+                            topLeft = topLeft,
+                            size = sizePx,
                             style = Stroke(width = 2f)
                         )
 
-                        val origin = joystickOrigin
-                        val knob = joystickKnob
-                        if (origin != null && knob != null) {
-                            drawCircle(color = Color(0x55FFFFFF), radius = LOBBY_JOYSTICK_BASE_RADIUS, center = origin)
-                            drawCircle(color = Color(0xCCFFFFFF), radius = LOBBY_JOYSTICK_KNOB_RADIUS, center = knob)
-                        }
-                    }
-
-                    Text(
-                        "🖥 Monitor",
-                        color = TacticalColors.TextSecondary,
-                        fontSize = 11.sp,
-                        modifier = Modifier.align(Alignment.TopStart).padding(12.dp)
-                    )
-                    Text(
-                        "🚪 Dulap",
-                        color = TacticalColors.TextSecondary,
-                        fontSize = 11.sp,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
-                    )
-
-                    if (isNearMonitor && isHost) {
-                        Button(
-                            onClick = { showSettings = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2)),
-                            modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)
-                        ) {
-                            Text("⚙ Setari camera")
-                        }
-                    } else if (isNearMonitor && !isHost) {
-                        Text(
-                            "Doar gazda poate schimba setarile",
-                            color = TacticalColors.TextMuted,
-                            fontSize = 11.sp,
-                            modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)
-                        )
-                    }
-
-                    if (isNearWardrobe) {
-                        Button(
-                            onClick = { showWardrobe = true },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6D4C41)),
-                            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
-                        ) {
-                            Text("🎨 Alege culoarea")
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                errorMessage?.let { msg ->
-                    Text(
-                        text = msg,
-                        color = TacticalColors.Danger,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
-                }
-
-                Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                    if (isHost) {
-                        TacticalButton(
-                            text = if (canStart) "START" else "MINIM $MIN_PLAYERS JUCATORI NECESARI",
-                            onClick = { viewModel.startGame() },
-                            enabled = canStart,
-                            isPrimary = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Se asteapta ca gazda sa inceapa jocul...",
-                                color = TacticalColors.TextSecondary
-                            )
+                        when (room.id) {
+                            "lobby_settings" -> {
+                                val monitorPos = worldToScreen(LobbyRoomLayout.MONITOR_X, LobbyRoomLayout.MONITOR_Y)
+                                drawRect(
+                                    color = Color(0xFF1976D2),
+                                    topLeft = Offset(monitorPos.x - 30f, monitorPos.y - 22f),
+                                    size = Size(60f, 44f)
+                                )
+                                drawRect(
+                                    color = Color(0xFF05070A),
+                                    topLeft = Offset(monitorPos.x - 30f, monitorPos.y - 22f),
+                                    size = Size(60f, 44f),
+                                    style = Stroke(width = 2.5f)
+                                )
+                                drawRect(
+                                    color = Color(0xFF3DDC5A).copy(alpha = 0.5f),
+                                    topLeft = Offset(monitorPos.x - 22f, monitorPos.y - 15f),
+                                    size = Size(44f, 26f)
+                                )
+                            }
+                            "lobby_wardrobe" -> {
+                                val wardrobePos = worldToScreen(LobbyRoomLayout.WARDROBE_X, LobbyRoomLayout.WARDROBE_Y)
+                                drawRect(
+                                    color = Color(0xFF6D4C41),
+                                    topLeft = Offset(wardrobePos.x - 26f, wardrobePos.y - 34f),
+                                    size = Size(52f, 68f)
+                                )
+                                drawRect(
+                                    color = Color(0xFF05070A),
+                                    topLeft = Offset(wardrobePos.x - 26f, wardrobePos.y - 34f),
+                                    size = Size(52f, 68f),
+                                    style = Stroke(width = 2.5f)
+                                )
+                                drawLine(
+                                    color = Color(0xFF05070A),
+                                    start = Offset(wardrobePos.x, wardrobePos.y - 34f),
+                                    end = Offset(wardrobePos.x, wardrobePos.y + 34f),
+                                    strokeWidth = 2.5f
+                                )
+                                // 2 manere mici
+                                drawCircle(Color(0xFFB58A3D), radius = 3f, center = Offset(wardrobePos.x - 8f, wardrobePos.y))
+                                drawCircle(Color(0xFFB58A3D), radius = 3f, center = Offset(wardrobePos.x + 8f, wardrobePos.y))
+                            }
                         }
                     }
                 }
             }
 
+            clipPath(visibilityPathScreen) {
+                wallSegments.forEach { seg ->
+                    val p1 = worldToScreen(seg.x1, seg.y1)
+                    val p2 = worldToScreen(seg.x2, seg.y2)
+                    drawLine(color = Color.Black, start = p1, end = p2, strokeWidth = 3f)
+                }
+            }
+
+            // Ceilalti jucatori din lobby, cu culoarea lor reala
+            clipPath(visibilityPathScreen) {
+                viewModel.lobbyPlayerPositions.entries.forEach { (pid, pos) ->
+                    if (pid == viewModel.localPlayerId.value) return@forEach
+                    val isVisible = isPointVisibleFromPoint(pos.x, pos.y, playerX, playerY, wallSegments, 900f)
+                    if (!isVisible) return@forEach
+
+                    val info = viewModel.lobbyPlayers.firstOrNull { it.id == pid }
+                    val hex = info?.color ?: "#9E9E9E"
+                    val color = try {
+                        Color(android.graphics.Color.parseColor(hex))
+                    } catch (e: Exception) {
+                        Color(0xFF9E9E9E)
+                    }
+                    val screenPos = worldToScreen(pos.x, pos.y)
+                    drawCircle(color = color, radius = LOBBY_PLAYER_RADIUS * LOBBY_TILE_SCALE, center = screenPos)
+                    drawCircle(
+                        color = Color.Black,
+                        radius = LOBBY_PLAYER_RADIUS * LOBBY_TILE_SCALE,
+                        center = screenPos,
+                        style = Stroke(width = 2f)
+                    )
+                    val name = info?.name
+                    if (!name.isNullOrBlank()) {
+                        drawContext.canvas.nativeCanvas.drawText(
+                            name,
+                            screenPos.x,
+                            screenPos.y - LOBBY_PLAYER_RADIUS * LOBBY_TILE_SCALE - 10f,
+                            android.graphics.Paint().apply {
+                                color = android.graphics.Color.WHITE
+                                textSize = 26f
+                                textAlign = android.graphics.Paint.Align.CENTER
+                                isAntiAlias = true
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Jucatorul local, cu propria culoare reala
+            val myHex = viewModel.lobbyPlayers
+                .firstOrNull { it.id == viewModel.localPlayerId.value }?.color ?: "#FFD700"
+            val myColor = try {
+                Color(android.graphics.Color.parseColor(myHex))
+            } catch (e: Exception) {
+                Color(0xFFFFD700)
+            }
+            drawCircle(color = myColor, radius = LOBBY_PLAYER_RADIUS * LOBBY_TILE_SCALE, center = Offset(screenCenterX, screenCenterY))
+            drawCircle(
+                color = Color.Black,
+                radius = LOBBY_PLAYER_RADIUS * LOBBY_TILE_SCALE,
+                center = Offset(screenCenterX, screenCenterY),
+                style = Stroke(width = 2f)
+            )
+
+            val origin = joystickOrigin
+            val knob = joystickKnob
+            if (origin != null && knob != null) {
+                drawCircle(color = Color(0x55FFFFFF), radius = LOBBY_JOYSTICK_BASE_RADIUS, center = origin)
+                drawCircle(color = Color(0xCCFFFFFF), radius = LOBBY_JOYSTICK_KNOB_RADIUS, center = knob)
+            }
+        }
+
+        // Header: cod camera + iesire + invita prieteni - text simplu peste
+        // canvas, fara fundal opac (asa cum ai cerut sa nu blocheze vederea).
+        Box(modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(16.dp)) {
             IconButton(
-                onClick = { showChat = true },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 8.dp, end = 64.dp)
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(Color(0x66000000))
+                onClick = {
+                    viewModel.leaveLobby()
+                    onLeaveLobby()
+                },
+                modifier = Modifier.align(Alignment.CenterStart)
             ) {
-                Text("💬", fontSize = 20.sp)
+                Text("⬅", fontSize = 20.sp, color = Color.White)
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(roomCode, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 4.sp)
+                Text(
+                    "JUCATORI (${lobbyPlayers.size}/$MAX_PLAYERS)",
+                    color = Color(0xFFB0B0B0),
+                    fontSize = 11.sp
+                )
+            }
+
+            Row(modifier = Modifier.align(Alignment.CenterEnd)) {
+                IconButton(onClick = { showInviteDialog = true }) {
+                    Text("👥", color = Color.White)
+                }
+                IconButton(onClick = { showChat = true }) {
+                    Text("💬", fontSize = 18.sp)
+                }
+            }
+        }
+
+        errorMessage?.let { msg ->
+            Text(
+                text = msg,
+                color = TacticalColors.Danger,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 76.dp)
+                    .background(Color(0x99000000), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+        }
+
+        if (isNearMonitor && isHost) {
+            Button(
+                onClick = { showSettings = true },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2)),
+                modifier = Modifier.align(Alignment.BottomStart).padding(24.dp)
+            ) {
+                Text("⚙ Setari camera")
+            }
+        } else if (isNearMonitor && !isHost) {
+            Text(
+                "Doar gazda poate schimba setarile",
+                color = Color(0xFFCCCCCC),
+                fontSize = 11.sp,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(24.dp)
+                    .background(Color(0x99000000), RoundedCornerShape(6.dp))
+                    .padding(8.dp)
+            )
+        }
+
+        if (isNearWardrobe) {
+            Button(
+                onClick = { showWardrobe = true },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6D4C41)),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp)
+            ) {
+                Text("🎨 Alege culoarea")
+            }
+        }
+
+        // Butonul de Start (doar host) - fundal usor semi-transparent, NU un
+        // strat opac care blocheaza vederea camerei din spatele lui.
+        if (isHost) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 24.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0x33000000))
+                    .clickable(enabled = canStart) { viewModel.startGame() }
+                    .padding(horizontal = 28.dp, vertical = 14.dp)
+            ) {
+                Text(
+                    text = if (canStart) "START" else "MINIM $MIN_PLAYERS JUCATORI",
+                    color = if (canStart) Color.White else Color(0xFF888888),
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 2.sp
+                )
             }
         }
     }
@@ -397,10 +474,7 @@ fun WaitingRoomScreen(
     }
 
     if (showWardrobe) {
-        WardrobeDialog(
-            viewModel = viewModel,
-            onDismiss = { showWardrobe = false }
-        )
+        WardrobeDialog(viewModel = viewModel, onDismiss = { showWardrobe = false })
     }
 
     if (showChat) {
@@ -413,10 +487,7 @@ fun WaitingRoomScreen(
     }
 
     if (showInviteDialog) {
-        InviteFriendDialog(
-            roomCode = roomCode,
-            onDismiss = { showInviteDialog = false }
-        )
+        InviteFriendDialog(roomCode = roomCode, onDismiss = { showInviteDialog = false })
     }
 
     playerForModeration?.let { target ->
@@ -555,9 +626,7 @@ private fun LobbyChatDialog(
                                 } catch (e: Exception) {
                                     Color.Gray
                                 }
-                                Box(
-                                    modifier = Modifier.size(18.dp).clip(CircleShape).background(color)
-                                )
+                                Box(modifier = Modifier.size(18.dp).clip(CircleShape).background(color))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(player.name, color = TacticalColors.TextPrimary, fontSize = 13.sp)
                                 if (player.id == viewModel.localPlayerId.value) {
@@ -683,11 +752,7 @@ private fun ReportPlayerDialog(
         title = { Text("Raporteaza pe ${player.name}", color = TacticalColors.TextPrimary) },
         text = {
             Column {
-                Text(
-                    "Alege motivul raportului:",
-                    color = TacticalColors.TextSecondary,
-                    fontSize = 12.sp
-                )
+                Text("Alege motivul raportului:", color = TacticalColors.TextSecondary, fontSize = 12.sp)
                 Spacer(modifier = Modifier.height(10.dp))
 
                 categories.chunked(2).forEach { rowItems ->
@@ -702,9 +767,7 @@ private fun ReportPlayerDialog(
                                     .weight(1f)
                                     .height(64.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(
-                                        if (isSelected) TacticalColors.AccentDim else TacticalColors.SurfaceRaised
-                                    )
+                                    .background(if (isSelected) TacticalColors.AccentDim else TacticalColors.SurfaceRaised)
                                     .border(
                                         width = if (isSelected) 2.dp else 1.dp,
                                         color = if (isSelected) TacticalColors.Accent else TacticalColors.Border,
@@ -713,12 +776,7 @@ private fun ReportPlayerDialog(
                                     .clickable { selectedReason = reasonKey },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    label,
-                                    color = TacticalColors.TextPrimary,
-                                    fontSize = 12.sp,
-                                    textAlign = TextAlign.Center
-                                )
+                                Text(label, color = TacticalColors.TextPrimary, fontSize = 12.sp, textAlign = TextAlign.Center)
                             }
                         }
                     }
@@ -727,10 +785,7 @@ private fun ReportPlayerDialog(
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = { selectedReason?.let(onSubmit) },
-                enabled = selectedReason != null
-            ) {
+            TextButton(onClick = { selectedReason?.let(onSubmit) }, enabled = selectedReason != null) {
                 Text(
                     "Trimite",
                     color = if (selectedReason != null) TacticalColors.Accent else TacticalColors.TextMuted,
@@ -781,9 +836,7 @@ private fun InviteFriendDialog(roomCode: String, onDismiss: () -> Unit) {
                 } else {
                     friends.forEach { friend ->
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 6.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -829,13 +882,11 @@ private fun ModeratePlayerDialog(
         containerColor = TacticalColors.Surface,
         title = { Text(playerName, color = TacticalColors.TextPrimary) },
         text = {
-            Column {
-                Text(
-                    "Kick: poate reintra oricand cu acelasi cod.\nBan: nu se mai poate intoarce in aceasta camera.",
-                    color = TacticalColors.TextSecondary,
-                    fontSize = 13.sp
-                )
-            }
+            Text(
+                "Kick: poate reintra oricand cu acelasi cod.\nBan: nu se mai poate intoarce in aceasta camera.",
+                color = TacticalColors.TextSecondary,
+                fontSize = 13.sp
+            )
         },
         confirmButton = {
             TextButton(onClick = onBan) {
