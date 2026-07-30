@@ -779,8 +779,14 @@ class GameManager:
         sample = DnaSample(
             id=sample_id,
             room_id="morgue",
-            actual_owner_id=corpse.victim_id,
-            displayed_owner_id=corpse.victim_id,
+            # IMPORTANT: ADN-ul recoltat de pe un cadavru reprezinta urmele
+            # lasate de UCIGAS la locul crimei, NU ADN-ul victimei insasi -
+            # asta e intreg scopul mecanicii: o comparare reusita cu arhiva
+            # demasca spionul. (Bug anterior: aici era gresit corpse.victim_id,
+            # ceea ce facea ca orice comparare sa esueze mereu, indiferent
+            # cine era de fapt ucigasul.)
+            actual_owner_id=corpse.killer_id,
+            displayed_owner_id=corpse.killer_id,
             completeness=corpse.dna_completeness,
             is_reference=False,
             source_corpse_id=corpse_id,
