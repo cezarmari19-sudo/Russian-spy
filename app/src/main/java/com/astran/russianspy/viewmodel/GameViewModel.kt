@@ -244,6 +244,27 @@ class GameViewModel : ViewModel() {
         networkClient?.sendKillPlayer(targetPlayerId)
     }
 
+    /** Trimite pozitia curenta in camera FIZICA de lobby (hol de asteptare). */
+    fun sendLobbyPosition(x: Float, y: Float) {
+        networkClient?.sendLobbyPositionUpdate(x, y)
+    }
+
+    /** Alege o culoare din dulap. */
+    fun choosePlayerColor(color: String) {
+        networkClient?.sendChoosePlayerColor(color)
+    }
+
+    /** Trimite un mesaj in chat-ul de lobby. */
+    fun sendLobbyChatMessage(text: String) {
+        if (text.isBlank()) return
+        networkClient?.sendLobbyChatMessage(text)
+    }
+
+    /** Raporteaza un alt jucator din lobby (motiv: hacking, harassment, bad_language, name). */
+    fun reportPlayer(targetPlayerId: String, reason: String) {
+        networkClient?.sendPlayerReport(targetPlayerId, reason)
+    }
+
     /** Apelat de ORICE jucator viu (spion sau agent FBI) aflat langa un corp
      * nereportat, ca sa il raporteze. */
     fun reportCorpse(corpseId: String) {
@@ -452,6 +473,15 @@ class GameViewModel : ViewModel() {
     // Pozitiile LIVE (roomId + x + y exacte) ale tuturor jucatorilor. Folosit de monitoarele de supraveghere.
     val playerLivePositions = mutableStateMapOf<String, LivePosition>()
 
+    // Pozitiile jucatorilor in camera FIZICA de lobby (hol de asteptare cu
+    // monitor si dulap) - complet separate de playerLivePositions (folosit
+    // doar in jocul propriu-zis, dupa start_game()).
+    val lobbyPlayerPositions = mutableStateMapOf<String, com.astran.russianspy.network.LobbyPositionInfo>()
+
+    // Mesajele de chat din lobby, in ordine cronologica - limitate la 40 de
+    // server (vezi LOBBY_CHAT_HISTORY_LIMIT), aici doar afisam ce primim.
+    val lobbyChatMessages = mutableStateListOf<com.astran.russianspy.network.LobbyChatMessageInfo>()
+
     val playerNames = mutableStateMapOf<String, String>()
 
     private val _gameStarted = mutableStateOf(false)
@@ -595,14 +625,12 @@ class GameViewModel : ViewModel() {
             is ServerEvent.CorpseFound -> {
                 // Inlocuim intrarea daca exista deja (ex: dupa raport, cand
                 // "reported" se schimba), altfel o adaugam noua.
-                android.util.Log.d("CorpseDebug", "CorpseFound id=${event.corpse.id} reported=${event.corpse.reported} roomId=${event.corpse.roomId}")
                 val index = corpses.indexOfFirst { it.id == event.corpse.id }
                 if (index >= 0) {
                     corpses[index] = event.corpse
                 } else {
                     corpses.add(event.corpse)
                 }
-                android.util.Log.d("CorpseDebug", "corpses now: ${corpses.map { it.id to it.reported }}")
             }
             is ServerEvent.DnaArchiveReady -> {
                 // Inlocuim doar mostrele de referinta - cele recoltate (daca
@@ -728,6 +756,35 @@ class GameViewModel : ViewModel() {
                 val existing = playerLivePositions[event.playerId]
                 val roomId = existing?.roomId ?: ""
                 playerLivePositions[event.playerId] = LivePosition(roomId, event.x, event.y)
+            }
+            is ServerEvent.LobbyPositionUpdate -> {
+                lobbyPlayerPositions[event.playerId] = com.astran.russianspy.network.LobbyPositionInfo(
+                    playerId = event.playerId, x = event.x, y = event.y
+                )
+            }
+            is ServerEvent.LobbyPositionsSnapshot -> {
+                event.positions.forEach { info ->
+                    lobbyPlayerPositions[info.playerId] = info
+                }
+            }
+            is ServerEvent.LobbyChatMessageEvent -> {
+                lobbyChatMessages.add(event.message)
+                // Pastram si local doar ultimele 40 (in caz ca serverul a
+                // trimis mai multe intre timp) - server-ul e sursa reala de
+                // adevar pentru limita, dar taiem si aici ca sa nu creasca
+                // lista local la nesfarsit daca ratam vreun mesaj de curatare.
+                if (lobbyChatMessages.size > 40) {
+                    val overflow = lobbyChatMessages.size - 40
+                    repeat(overflow) { lobbyChatMessages.removeAt(0) }
+                }
+            }
+            is ServerEvent.LobbyChatHistory -> {
+                lobbyChatMessages.clear()
+                lobbyChatMessages.addAll(event.messages)
+            }
+            is ServerEvent.ReportSubmitted -> {
+                // Confirmare privata - UI-ul poate afisa un mesaj scurt de
+                // succes daca vrea (vezi WaitingRoomScreen), nu e obligatoriu.
             }
             is ServerEvent.GameStarted -> {
                 _myRole.value = if (event.yourRole == "RUSSIAN_SPY") Role.RUSSIAN_SPY else Role.FBI_AGENT
