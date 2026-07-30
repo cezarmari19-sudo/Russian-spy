@@ -142,7 +142,7 @@ class GameManager:
         """Alege prima culoare din paleta nefolosita inca de niciun jucator
         conectat din camera. Daca s-au epuizat (nu ar trebui, MAX_PLAYERS <=
         len(PLAYER_COLORS)), repeta paleta ca fallback sigur."""
-        used = {p.color for p in room.players.values()}
+        used = {p.color for p in room.players.values() if p.connected}
         for color in PLAYER_COLORS:
             if color not in used:
                 return color
@@ -187,7 +187,14 @@ class GameManager:
             return None, "Camera nu exista"
         if room.phase.value != "LOBBY":
             return None, "Jocul a inceput deja"
-        if len(room.players) >= MAX_PLAYERS:
+        # Numaram DOAR jucatorii CONECTATI - remove_player nu sterge
+        # niciodata intrarea din room.players (doar seteaza connected=False,
+        # ca sa permita reconectare), deci fara acest filtru, intrari/iesiri
+        # repetate acumulau "fantome" deconectate la nesfarsit in
+        # room.players, si camera ajungea sa para "plina" (>= MAX_PLAYERS)
+        # desi era de fapt goala sau aproape goala.
+        connected_count = sum(1 for p in room.players.values() if p.connected)
+        if connected_count >= MAX_PLAYERS:
             return None, "Camera este plina"
         if account_id and account_id in room.banned_account_ids:
             return None, "Ai fost banat din aceasta camera"
@@ -227,7 +234,8 @@ class GameManager:
         if color not in PLAYER_COLORS:
             return "Culoare invalida"
         already_used = any(
-            p.color == color for pid, p in room.players.items() if pid != player_id
+            p.color == color for pid, p in room.players.items()
+            if pid != player_id and p.connected
         )
         if already_used:
             return "Aceasta culoare e deja folosita de alt jucator"
@@ -1120,8 +1128,8 @@ class GameManager:
             room for room in self.rooms.values()
             if not room.is_private
             and room.phase == GamePhase.LOBBY
-            and len(room.players) < MAX_PLAYERS
-            and len(room.players) > 0
+            and sum(1 for p in room.players.values() if p.connected) < MAX_PLAYERS
+            and sum(1 for p in room.players.values() if p.connected) > 0
         ]
         if len(available) <= max_results:
             return available
