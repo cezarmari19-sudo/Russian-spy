@@ -6,7 +6,7 @@ from typing import Optional
 from models import (
     GameRoom, GamePhase, Player, Role, RoomFunction, Room,
     SpyTaskType, SpyTaskInstance, SPY_TASK_ALLOWED_FUNCTIONS, Corpse, Meeting,
-    DnaSample, DnaComparisonResult,
+    DnaSample, DnaComparisonResult, LobbyChatMessage, LobbyPosition, PlayerReport,
 )
 
 # Paleta de culori stil Among Us - asignate jucatorilor in ordinea intrarii in
@@ -83,6 +83,23 @@ _HALLWAY_IDS = {
 MIN_PLAYERS = 1
 MAX_PLAYERS = 15
 
+# Camera FIZICA de asteptare (lobby), complet separata de harta jocului
+# (BUILDING_LAYOUT mai sus) - un mic "hol" cu doua obiecte interactive: un
+# monitor (setari camera, doar host) si un dulap (alegere culoare, oricine).
+# ATENTIE: aceste coordonate TREBUIE sa ramana identice cu cele din
+# app/src/main/java/com/astran/russianspy/data/LobbyRoomLayout.kt de pe
+# Android, la fel cum BUILDING_LAYOUT trebuie sincronizat cu BuildingLayout.kt.
+LOBBY_ROOM_WIDTH = 800.0
+LOBBY_ROOM_HEIGHT = 600.0
+LOBBY_MONITOR_X = 120.0
+LOBBY_MONITOR_Y = 120.0
+LOBBY_WARDROBE_X = 680.0
+LOBBY_WARDROBE_Y = 120.0
+LOBBY_INTERACT_RADIUS = 90.0
+LOBBY_SPAWN_X = LOBBY_ROOM_WIDTH / 2
+LOBBY_SPAWN_Y = LOBBY_ROOM_HEIGHT / 2
+LOBBY_CHAT_HISTORY_LIMIT = 40
+
 
 class GameManager:
     def __init__(self):
@@ -111,6 +128,7 @@ class GameManager:
         host = Player(id=host_player_id, name=host_name, current_room_id="entrance", account_id=account_id)
         host.color = self._assign_color(room)
         room.players[host_player_id] = host
+        room.lobby_positions[host_player_id] = LobbyPosition(x=LOBBY_SPAWN_X, y=LOBBY_SPAWN_Y)
         self.rooms[code] = room
         return room
 
@@ -151,7 +169,107 @@ class GameManager:
         player = Player(id=player_id, name=player_name, current_room_id="entrance", account_id=account_id)
         player.color = self._assign_color(room)
         room.players[player_id] = player
+        room.lobby_positions[player_id] = LobbyPosition(x=LOBBY_SPAWN_X, y=LOBBY_SPAWN_Y)
         return room, None
+
+    def update_lobby_position(self, room_code: str, player_id: str, x: float, y: float) -> Optional[str]:
+        """Actualizeaza pozitia unui jucator in camera FIZICA de lobby (nu are
+        legatura cu pozitia din jocul propriu-zis, folosita doar dupa start)."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if room.phase != GamePhase.LOBBY:
+            return "Nu mai esti in lobby"
+        if player_id not in room.players:
+            return "Jucator invalid"
+        room.lobby_positions[player_id] = LobbyPosition(x=x, y=y)
+        return None
+
+    def choose_player_color(self, room_code: str, player_id: str, color: str) -> Optional[str]:
+        """Jucatorul isi alege propria culoare din dulap - trebuie sa fie o
+        culoare din paleta oficiala (PLAYER_COLORS) si sa nu fie deja folosita
+        de alt jucator conectat din aceeasi camera (culorile raman unice per
+        camera, la fel ca la alocarea automata initiala)."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if room.phase != GamePhase.LOBBY:
+            return "Culoarea nu se mai poate schimba dupa inceperea jocului"
+        player = room.players.get(player_id)
+        if player is None:
+            return "Jucator invalid"
+        if color not in PLAYER_COLORS:
+            return "Culoare invalida"
+        already_used = any(
+            p.color == color for pid, p in room.players.items() if pid != player_id
+        )
+        if already_used:
+            return "Aceasta culoare e deja folosita de alt jucator"
+        player.color = color
+        return None
+
+    def add_lobby_chat_message(
+        self, room_code: str, player_id: str, text: str
+    ) -> tuple[Optional[str], Optional[LobbyChatMessage]]:
+        """Adauga un mesaj in chat-ul de lobby. Istoricul e limitat la
+        LOBBY_CHAT_HISTORY_LIMIT (40) - cand se adauga un mesaj nou peste
+        limita, cel mai vechi e scos automat (coada FIFO)."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista", None
+        player = room.players.get(player_id)
+        if player is None:
+            return "Jucator invalid", None
+        clean_text = text.strip()
+        if not clean_text:
+            return "Mesajul nu poate fi gol", None
+        if len(clean_text) > 300:
+            clean_text = clean_text[:300]
+
+        message = LobbyChatMessage(
+            id=f"chat_{random.randint(1000000, 9999999)}",
+            sender_id=player_id,
+            sender_name=player.name,
+            text=clean_text,
+            sent_at_millis=int(time.time() * 1000),
+        )
+        room.lobby_chat_messages.append(message)
+        # Pastram DOAR ultimele LOBBY_CHAT_HISTORY_LIMIT mesaje - scoatem cele
+        # mai vechi de la inceputul listei daca am depasit limita.
+        if len(room.lobby_chat_messages) > LOBBY_CHAT_HISTORY_LIMIT:
+            room.lobby_chat_messages = room.lobby_chat_messages[-LOBBY_CHAT_HISTORY_LIMIT:]
+        return None, message
+
+    def submit_player_report(
+        self, room_code: str, reporter_id: str, reported_id: str, reason: str
+    ) -> Optional[str]:
+        """Inregistreaza un raport al unui jucator despre altul (motiv: hacking,
+        harassment, bad_language sau name). NU declanseaza nicio actiune
+        automata (fara ban/kick) - doar se salveaza pentru referinta ulterioara."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if reporter_id not in room.players:
+            return "Jucator invalid"
+        reported = room.players.get(reported_id)
+        if reported is None:
+            return "Jucatorul raportat nu exista"
+        if reported_id == reporter_id:
+            return "Nu te poti raporta pe tine insuti"
+        valid_reasons = {"hacking", "harassment", "bad_language", "name"}
+        if reason not in valid_reasons:
+            return "Motiv de raport invalid"
+
+        report = PlayerReport(
+            id=f"report_{random.randint(1000000, 9999999)}",
+            reporter_id=reporter_id,
+            reported_id=reported_id,
+            reported_name=reported.name,
+            reason=reason,
+            sent_at_millis=int(time.time() * 1000),
+        )
+        room.player_reports.append(report)
+        return None
 
     def remove_player(self, room_code: str, player_id: str):
         room = self.rooms.get(room_code)
