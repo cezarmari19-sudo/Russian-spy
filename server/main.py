@@ -690,7 +690,7 @@ async def public_rooms():
         "rooms": [
             {
                 "roomCode": r.room_code,
-                "playerCount": len(r.players),
+                "playerCount": sum(1 for p in r.players.values() if p.connected),
                 "maxPlayers": MAX_PLAYERS,
             }
             for r in rooms
