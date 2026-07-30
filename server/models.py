@@ -315,6 +315,61 @@ class Meeting:
 
 
 @dataclass
+class LobbyChatMessage:
+    """Un mesaj de chat trimis in camera de asteptare (lobby), inainte de
+    inceperea partidei. Lista completa e limitata la 40 de mesaje - vezi
+    GameManager.add_lobby_chat_message, care scoate automat cel mai vechi
+    mesaj cand se adauga al 41-lea."""
+    id: str
+    sender_id: str
+    sender_name: str
+    text: str
+    sent_at_millis: int
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "senderId": self.sender_id,
+            "senderName": self.sender_name,
+            "text": self.text,
+            "sentAtMillis": self.sent_at_millis,
+        }
+
+
+@dataclass
+class LobbyPosition:
+    """Pozitia unui jucator in camera FIZICA de lobby (holul de asteptare cu
+    monitor si dulap) - complet separata de pozitia din jocul propriu-zis."""
+    x: float
+    y: float
+
+    def to_dict(self):
+        return {"x": self.x, "y": self.y}
+
+
+@dataclass
+class PlayerReport:
+    """Un raport trimis de un jucator despre altul, in lobby. DOAR inregistrat -
+    nu declanseaza nicio actiune automata (fara ban/kick automat asociat)."""
+    id: str
+    reporter_id: str
+    reported_id: str
+    reported_name: str
+    reason: str  # "hacking" | "harassment" | "bad_language" | "name"
+    sent_at_millis: int
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "reporterId": self.reporter_id,
+            "reportedId": self.reported_id,
+            "reportedName": self.reported_name,
+            "reason": self.reason,
+            "sentAtMillis": self.sent_at_millis,
+        }
+
+
+@dataclass
 class GameRoom:
     """Reprezinta o camera/lobby de joc (partida), nu o camera fizica din cladire."""
     room_code: str
@@ -362,3 +417,16 @@ class GameRoom:
     # tip poate fi ocupat simultan - masina compara o singura pereche o data.
     lab_machine_harvested_sample_id: Optional[str] = None
     lab_machine_reference_sample_id: Optional[str] = None
+    # Mesajele de chat din camera de asteptare (lobby) - pastrate in memorie,
+    # DOAR ultimele 40 (cel mai vechi e scos automat cand se adauga al 41-lea -
+    # vezi add_lobby_chat_message in game_manager.py). Nu supravietuiesc unui
+    # restart de server (nu sunt persistate pe disk), la fel ca restul starii.
+    lobby_chat_messages: list["LobbyChatMessage"] = field(default_factory=list)
+    # Pozitiile jucatorilor in camera fizica de lobby (holul de asteptare cu
+    # monitor si dulap) - separate de pozitiile din jocul propriu-zis
+    # (Player.current_room_id/x/y, folosite doar dupa start_game()).
+    lobby_positions: dict[str, "LobbyPosition"] = field(default_factory=dict)
+    # Rapoartele trimise intre jucatori in lobby (cine a raportat pe cine, cu
+    # ce motiv) - DOAR inregistrate, nu declanseaza nicio actiune automata
+    # (fara ban/kick automat). Utile eventual pentru moderare manuala ulterioara.
+    player_reports: list["PlayerReport"] = field(default_factory=list)
