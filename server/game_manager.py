@@ -83,21 +83,47 @@ _HALLWAY_IDS = {
 MIN_PLAYERS = 1
 MAX_PLAYERS = 15
 
-# Camera FIZICA de asteptare (lobby), complet separata de harta jocului
-# (BUILDING_LAYOUT mai sus) - un mic "hol" cu doua obiecte interactive: un
-# monitor (setari camera, doar host) si un dulap (alegere culoare, oricine).
+# Cladirea MICA de asteptare (lobby), complet separata de harta jocului
+# (BUILDING_LAYOUT mai sus) - 3 camere mici legate prin 2 holuri scurte,
+# gandita ca traversarea sa dureze doar cateva secunde:
+#   [Setari] --hol stanga-- [Centrala/spawn] --hol dreapta-- [Dulap]
 # ATENTIE: aceste coordonate TREBUIE sa ramana identice cu cele din
 # app/src/main/java/com/astran/russianspy/data/LobbyRoomLayout.kt de pe
 # Android, la fel cum BUILDING_LAYOUT trebuie sincronizat cu BuildingLayout.kt.
-LOBBY_ROOM_WIDTH = 800.0
-LOBBY_ROOM_HEIGHT = 600.0
-LOBBY_MONITOR_X = 120.0
-LOBBY_MONITOR_Y = 120.0
-LOBBY_WARDROBE_X = 680.0
-LOBBY_WARDROBE_Y = 120.0
-LOBBY_INTERACT_RADIUS = 90.0
-LOBBY_SPAWN_X = LOBBY_ROOM_WIDTH / 2
-LOBBY_SPAWN_Y = LOBBY_ROOM_HEIGHT / 2
+LOBBY_CENTRAL_X = 400.0
+LOBBY_CENTRAL_Y = 300.0
+LOBBY_CENTRAL_W = 300.0
+LOBBY_CENTRAL_H = 250.0
+
+LOBBY_HALL_LEFT_X = 250.0
+LOBBY_HALL_LEFT_Y = 390.0
+LOBBY_HALL_LEFT_W = 150.0
+LOBBY_HALL_LEFT_H = 70.0
+
+LOBBY_SETTINGS_ROOM_X = 50.0
+LOBBY_SETTINGS_ROOM_Y = 290.0
+LOBBY_SETTINGS_ROOM_W = 200.0
+LOBBY_SETTINGS_ROOM_H = 270.0
+LOBBY_MONITOR_X = 150.0
+LOBBY_MONITOR_Y = 390.0
+
+LOBBY_HALL_RIGHT_X = 700.0
+LOBBY_HALL_RIGHT_Y = 390.0
+LOBBY_HALL_RIGHT_W = 150.0
+LOBBY_HALL_RIGHT_H = 70.0
+
+LOBBY_WARDROBE_ROOM_X = 850.0
+LOBBY_WARDROBE_ROOM_Y = 290.0
+LOBBY_WARDROBE_ROOM_W = 200.0
+LOBBY_WARDROBE_ROOM_H = 270.0
+LOBBY_WARDROBE_X = 950.0
+LOBBY_WARDROBE_Y = 390.0
+
+LOBBY_ROOM_WIDTH = 1050.0
+LOBBY_ROOM_HEIGHT = 560.0
+LOBBY_INTERACT_RADIUS = 80.0
+LOBBY_SPAWN_X = LOBBY_CENTRAL_X + LOBBY_CENTRAL_W / 2
+LOBBY_SPAWN_Y = LOBBY_CENTRAL_Y + LOBBY_CENTRAL_H / 2
 LOBBY_CHAT_HISTORY_LIMIT = 40
 
 
