@@ -335,7 +335,7 @@ fun WaitingRoomScreen(
                             screenPos.x,
                             screenPos.y - LOBBY_PLAYER_RADIUS * LOBBY_TILE_SCALE - 10f,
                             android.graphics.Paint().apply {
-                                color = android.graphics.Color.WHITE
+                                this.color = android.graphics.Color.WHITE
                                 textSize = 26f
                                 textAlign = android.graphics.Paint.Align.CENTER
                                 isAntiAlias = true
