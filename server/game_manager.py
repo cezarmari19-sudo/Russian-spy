@@ -657,6 +657,19 @@ class GameManager:
         if sample is None:
             return "Mostra nu exista", None
 
+        # Limita: o singura mostra netratata poate sta in Laborator o data
+        # (adusa, dar inca nepusa intr-un slot al masinii de comparare) -
+        # indiferent daca e recoltata sau de referinta. Daca exista deja una
+        # asa, respingem trimiterea altei mostre pana cand cea existenta e
+        # pusa intr-un slot (placed_in_lab_slot=True) sau consumata la o
+        # comparare (stearsa din room.dna_samples).
+        already_waiting = any(
+            s.room_id == "forensics" and not s.placed_in_lab_slot
+            for s in room.dna_samples.values()
+        )
+        if already_waiting:
+            return "Exista deja o mostra netratata in laborator - pune-o intr-un slot inainte sa aduci alta", None
+
         if sample.is_reference:
             # Referinta: se creeaza mereu o copie noua, trimisa direct la
             # laborator - originalul NU se muta niciodata (ramane disponibil
