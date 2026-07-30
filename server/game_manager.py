@@ -371,13 +371,21 @@ class GameManager:
         room = self.rooms.get(room_code)
         if room is None:
             return "Camera nu exista"
-        if len(room.players) < MIN_PLAYERS:
+        # IMPORTANT: numaram si alocam roluri DOAR jucatorilor conectati acum.
+        # remove_player nu sterge niciodata intrarea din room.players (doar
+        # seteaza connected=False, ca sa permita reconectare/istoric) - fara
+        # acest filtru, un jucator care a intrat si iesit dintr-un lobby
+        # ramanea "fantoma" in room.players la nesfarsit, se numara la
+        # MIN_PLAYERS, si putea chiar primi rolul de spion sau agent FBI desi
+        # nu mai era conectat la nimeni.
+        connected_player_ids = [pid for pid, p in room.players.items() if p.connected]
+        if len(connected_player_ids) < MIN_PLAYERS:
             return f"Aveti nevoie de minim {MIN_PLAYERS} jucatori"
 
-        player_ids = list(room.players.keys())
-        spy_id = random.choice(player_ids)
+        spy_id = random.choice(connected_player_ids)
 
-        for pid, player in room.players.items():
+        for pid in connected_player_ids:
+            player = room.players[pid]
             player.role = Role.RUSSIAN_SPY if pid == spy_id else Role.FBI_AGENT
             player.current_room_id = "entrance"
 
@@ -392,17 +400,20 @@ class GameManager:
 
     def _generate_dna_archive(self, room: GameRoom):
         """Populeaza automat camera Arhiva ADN cu o mostra de referinta per
-        jucator din partida (inclusiv spionul si agentii FBI) - fara nicio
-        actiune din partea jucatorilor. Fiecare mostra e la 100% completeness
-        si NU poate fi niciodata stricata (arhiva e sterila). Clientii vad
-        doar culoarea jucatorului asociat mostrei, niciodata identitatea/rolul -
-        asta se afla doar in urma unei comparari la masina din laborator."""
+        jucator CONECTAT din partida (inclusiv spionul si agentii FBI) - fara
+        nicio actiune din partea jucatorilor. Fiecare mostra e la 100%
+        completeness si NU poate fi niciodata stricata (arhiva e sterila).
+        Clientii vad doar culoarea jucatorului asociat mostrei, niciodata
+        identitatea/rolul - asta se afla doar in urma unei comparari la
+        masina din laborator."""
         room.dna_samples = {
             sample_id: sample
             for sample_id, sample in room.dna_samples.items()
             if not sample.is_reference
         }
         for pid, player in room.players.items():
+            if not player.connected:
+                continue
             sample_id = f"dna_ref_{pid}"
             room.dna_samples[sample_id] = DnaSample(
                 id=sample_id,
