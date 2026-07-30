@@ -189,6 +189,25 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                 "type": "surveillance_cameras_assigned",
                 "spots": room.surveillance_cameras
             }))
+        # Pozitiile actuale ale tuturor jucatorilor din camera FIZICA de lobby
+        # (hol de asteptare) - trimise o singura data la conectare, ca noul
+        # client sa vada instant unde e fiecare, fara sa astepte prima miscare
+        # a lor (lobby_position_update se trimite doar la SCHIMBAREA pozitiei).
+        lobby_positions_snapshot = [
+            {"playerId": pid, "x": pos.x, "y": pos.y}
+            for pid, pos in room.lobby_positions.items()
+        ]
+        await websocket.send_text(json.dumps({
+            "type": "lobby_positions_snapshot",
+            "positions": lobby_positions_snapshot
+        }))
+        # Istoricul de chat al lobby-ului (max 40 mesaje) - trimis o singura
+        # data la conectare, ca noul client sa vada conversatia deja existenta.
+        if room.lobby_chat_messages:
+            await websocket.send_text(json.dumps({
+                "type": "lobby_chat_history",
+                "messages": [m.to_dict() for m in room.lobby_chat_messages]
+            }))
 
     try:
         while True:
@@ -223,6 +242,56 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         "x": x,
                         "y": y
                     }, exclude_player_id=player_id)
+
+            elif action == "lobby_position_update":
+                # Pozitia in camera FIZICA de lobby (hol de asteptare cu monitor
+                # si dulap) - complet separata de position_update de mai sus
+                # (folosit doar in jocul propriu-zis, dupa start_game()).
+                x = data.get("x")
+                y = data.get("y")
+                if x is not None and y is not None:
+                    error = game_manager.update_lobby_position(room_code, player_id, x, y)
+                    if not error:
+                        await broadcast_to_room(room_code, {
+                            "type": "lobby_position_update",
+                            "playerId": player_id,
+                            "x": x,
+                            "y": y
+                        }, exclude_player_id=player_id)
+
+            elif action == "choose_player_color":
+                color = data.get("color", "")
+                error = game_manager.choose_player_color(room_code, player_id, color)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    # Trimitem lista de jucatori actualizata (cu noua culoare)
+                    # catre toata camera, ca toti clientii sa vada imediat
+                    # schimbarea - la fel ca la orice alta schimbare de stare.
+                    await broadcast_lobby_update(room_code)
+
+            elif action == "send_lobby_chat":
+                text = data.get("text", "")
+                error, message = game_manager.add_lobby_chat_message(room_code, player_id, text)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                elif message is not None:
+                    await broadcast_to_room(room_code, {
+                        "type": "lobby_chat_message",
+                        "message": message.to_dict()
+                    })
+
+            elif action == "submit_player_report":
+                target_player_id = data.get("targetPlayerId", "")
+                reason = data.get("reason", "")
+                error = game_manager.submit_player_report(room_code, player_id, target_player_id, reason)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    # Raportul e privat - doar cel care l-a trimis primeste
+                    # confirmarea, nu se anunta toata camera (nu vrem sa se
+                    # stie public cine a raportat pe cine).
+                    await websocket.send_text(json.dumps({"type": "report_submitted"}))
 
             elif action == "start_game":
                 error = game_manager.start_game(room_code)
@@ -406,7 +475,6 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                 else:
                     corpse = room.corpses.get(corpse_id) if room else None
                     if corpse is not None:
-                        print(f"[CorpseDebug] broadcasting corpse_found id={corpse.id} reported={corpse.reported} room_id={corpse.room_id}")
                         # Corpul dispare de pe harta pentru toti (reported=True),
                         # si identitatea victimei se dezvaluie - dar killerId
                         # ramane ascuns (reveal_killer=False), la fel ca inainte.
