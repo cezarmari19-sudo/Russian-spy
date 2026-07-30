@@ -1,34 +1,52 @@
 package com.astran.russianspy.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import com.astran.russianspy.data.LobbyRoomLayout
 import com.astran.russianspy.data.PlayerPrefs
 import com.astran.russianspy.network.AccountApi
+import com.astran.russianspy.network.LobbyChatMessageInfo
+import com.astran.russianspy.network.LobbyPlayerInfo
 import com.astran.russianspy.ui.theme.SectionLabel
 import com.astran.russianspy.ui.theme.TacticalBackground
 import com.astran.russianspy.ui.theme.TacticalButton
-import com.astran.russianspy.ui.theme.TacticalCard
 import com.astran.russianspy.ui.theme.TacticalColors
 import com.astran.russianspy.viewmodel.GameViewModel
 import com.astran.russianspy.viewmodel.RemovalReason
+import kotlin.math.sqrt
 
 private const val MIN_PLAYERS = 1
 private const val MAX_PLAYERS = 15
+private const val LOBBY_JOYSTICK_BASE_RADIUS = 90f
+private const val LOBBY_JOYSTICK_KNOB_RADIUS = 36f
 
 @Composable
 fun WaitingRoomScreen(
@@ -46,7 +64,16 @@ fun WaitingRoomScreen(
 
     var showSettings by remember { mutableStateOf(false) }
     var showInviteDialog by remember { mutableStateOf(false) }
-    var playerForModeration by remember { mutableStateOf<com.astran.russianspy.network.LobbyPlayerInfo?>(null) }
+    var showChat by remember { mutableStateOf(false) }
+    var showWardrobe by remember { mutableStateOf(false) }
+    var playerForModeration by remember { mutableStateOf<LobbyPlayerInfo?>(null) }
+
+    var playerX by remember { mutableStateOf(LobbyRoomLayout.SPAWN_X) }
+    var playerY by remember { mutableStateOf(LobbyRoomLayout.SPAWN_Y) }
+    var joystickDirX by remember { mutableStateOf(0f) }
+    var joystickDirY by remember { mutableStateOf(0f) }
+    var joystickOrigin by remember { mutableStateOf<Offset?>(null) }
+    var joystickKnob by remember { mutableStateOf<Offset?>(null) }
 
     LaunchedEffect(gameStarted) {
         if (gameStarted) {
@@ -54,9 +81,6 @@ fun WaitingRoomScreen(
         }
     }
 
-    // Serverul ne-a anuntat ca hostul ne-a dat kick sau ban - conexiunea e deja
-    // inchisa de server, doar curatam starea locala si navigam afara cu mesajul
-    // potrivit (WaitingRoomScreen dispare, deci UI-ul nu mai are cui sa arate nimic).
     LaunchedEffect(removalReason) {
         val reason = removalReason
         if (reason != null) {
@@ -66,207 +90,326 @@ fun WaitingRoomScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        var frameCounter = 0
+        while (true) {
+            withFrameNanos { }
+            if (joystickDirX != 0f || joystickDirY != 0f) {
+                val speed = 4.5f
+                val newX = (playerX + joystickDirX * speed)
+                    .coerceIn(20f, LobbyRoomLayout.ROOM_WIDTH - 20f)
+                val newY = (playerY + joystickDirY * speed)
+                    .coerceIn(20f, LobbyRoomLayout.ROOM_HEIGHT - 20f)
+                playerX = newX
+                playerY = newY
+
+                frameCounter++
+                if (frameCounter % 3 == 0) {
+                    viewModel.sendLobbyPosition(playerX, playerY)
+                }
+            }
+        }
+    }
+
     val roomCode = gameState?.roomCode ?: ""
     val canStart = isHost && lobbyPlayers.size >= MIN_PLAYERS
 
+    val distToMonitor = kotlin.math.hypot(
+        (playerX - LobbyRoomLayout.MONITOR_X).toDouble(),
+        (playerY - LobbyRoomLayout.MONITOR_Y).toDouble()
+    )
+    val isNearMonitor = distToMonitor <= LobbyRoomLayout.INTERACT_RADIUS
+
+    val distToWardrobe = kotlin.math.hypot(
+        (playerX - LobbyRoomLayout.WARDROBE_X).toDouble(),
+        (playerY - LobbyRoomLayout.WARDROBE_Y).toDouble()
+    )
+    val isNearWardrobe = distToWardrobe <= LobbyRoomLayout.INTERACT_RADIUS
+
     TacticalBackground {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp)
-        ) {
-            // Header cu buton de iesire + codul camerei
-            Box(modifier = Modifier.fillMaxWidth()) {
-                IconButton(
-                    onClick = {
-                        viewModel.leaveLobby()
-                        onLeaveLobby()
-                    },
-                    modifier = Modifier.align(Alignment.CenterStart)
-                ) {
-                    Text("⬅", fontSize = 20.sp, color = TacticalColors.TextPrimary)
+        Box(modifier = Modifier.fillMaxSize()) {
+
+            Column(modifier = Modifier.fillMaxSize()) {
+                Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                    IconButton(
+                        onClick = {
+                            viewModel.leaveLobby()
+                            onLeaveLobby()
+                        },
+                        modifier = Modifier.align(Alignment.CenterStart)
+                    ) {
+                        Text("⬅", fontSize = 20.sp, color = TacticalColors.TextPrimary)
+                    }
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        SectionLabel(text = "Cod camera")
+                        Text(
+                            text = roomCode,
+                            color = TacticalColors.TextPrimary,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 5.sp
+                        )
+                    }
+
+                    Row(modifier = Modifier.align(Alignment.CenterEnd)) {
+                        IconButton(onClick = { showInviteDialog = true }) {
+                            Text("👥")
+                        }
+                    }
                 }
 
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    SectionLabel(text = "Cod camera")
-                    Text(
-                        text = roomCode,
-                        color = TacticalColors.TextPrimary,
-                        fontSize = 40.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 6.sp
-                    )
-                    Text(
-                        text = "Spune-le celorlalti acest cod ca sa se alature",
-                        fontSize = 13.sp,
-                        color = TacticalColors.TextSecondary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Contor jucatori
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
                 Text(
                     text = "JUCATORI (${lobbyPlayers.size}/$MAX_PLAYERS)",
-                    color = TacticalColors.TextPrimary,
-                    fontSize = 16.sp,
+                    color = TacticalColors.TextSecondary,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp)
                 )
-                Row {
-                    IconButton(onClick = { showInviteDialog = true }) {
-                        Text("👥")
-                    }
-                    if (isHost) {
-                        IconButton(onClick = { showSettings = true }) {
-                            Text("⚙")
-                        }
-                    }
-                }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-            // Lista de jucatori
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(lobbyPlayers) { player ->
-                    TacticalCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        accentLeft = player.id == viewModel.localPlayerId.value
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Avatar simplu: cerc cu initiala, culoare derivata din nume -
-                            // da personalitate fara sa adauge un accent nou de culoare
-                            // in restul paletei (fiecare jucator are propria "insigna").
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(avatarColorFor(player.name)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = player.name.take(1).uppercase(),
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Text(
-                                text = player.name,
-                                color = if (player.connected) TacticalColors.TextPrimary else TacticalColors.TextMuted,
-                                fontSize = 16.sp,
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            if (player.id == viewModel.localPlayerId.value) {
-                                Text(
-                                    text = "TU",
-                                    fontSize = 11.sp,
-                                    color = TacticalColors.Accent,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp
-                                )
-                            } else if (isHost) {
-                                // Doar hostul vede acest buton, si doar pe randurile altor
-                                // jucatori - nu isi poate da kick/ban singur.
-                                IconButton(
-                                    onClick = { playerForModeration = player },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Text("⋮", color = TacticalColors.TextSecondary, fontSize = 18.sp)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF14171C))
+                        .border(1.dp, TacticalColors.Border, RoundedCornerShape(16.dp))
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragStart = { startPos ->
+                                    joystickOrigin = startPos
+                                    joystickKnob = startPos
+                                },
+                                onDrag = { change, _ ->
+                                    change.consume()
+                                    val origin = joystickOrigin ?: return@detectDragGestures
+                                    val rawOffset = change.position - origin
+                                    val distance = sqrt(rawOffset.x * rawOffset.x + rawOffset.y * rawOffset.y)
+                                    val clamped = if (distance > LOBBY_JOYSTICK_BASE_RADIUS) {
+                                        Offset(
+                                            rawOffset.x / distance * LOBBY_JOYSTICK_BASE_RADIUS,
+                                            rawOffset.y / distance * LOBBY_JOYSTICK_BASE_RADIUS
+                                        )
+                                    } else rawOffset
+                                    joystickKnob = origin + clamped
+                                    joystickDirX = clamped.x / LOBBY_JOYSTICK_BASE_RADIUS
+                                    joystickDirY = clamped.y / LOBBY_JOYSTICK_BASE_RADIUS
+                                },
+                                onDragEnd = {
+                                    joystickOrigin = null
+                                    joystickKnob = null
+                                    joystickDirX = 0f
+                                    joystickDirY = 0f
+                                },
+                                onDragCancel = {
+                                    joystickOrigin = null
+                                    joystickKnob = null
+                                    joystickDirX = 0f
+                                    joystickDirY = 0f
                                 }
-                            }
+                            )
+                        }
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val scaleX = size.width / LobbyRoomLayout.ROOM_WIDTH
+                        val scaleY = size.height / LobbyRoomLayout.ROOM_HEIGHT
+                        val scale = minOf(scaleX, scaleY)
+                        val offsetX = (size.width - LobbyRoomLayout.ROOM_WIDTH * scale) / 2f
+                        val offsetY = (size.height - LobbyRoomLayout.ROOM_HEIGHT * scale) / 2f
 
-                            if (!player.connected) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "deconectat",
-                                    fontSize = 11.sp,
-                                    color = TacticalColors.TextMuted
-                                )
+                        fun toScreen(wx: Float, wy: Float) = Offset(
+                            offsetX + wx * scale,
+                            offsetY + wy * scale
+                        )
+
+                        val monitorPos = toScreen(LobbyRoomLayout.MONITOR_X, LobbyRoomLayout.MONITOR_Y)
+                        drawRect(
+                            color = Color(0xFF1976D2),
+                            topLeft = Offset(monitorPos.x - 34f, monitorPos.y - 24f),
+                            size = Size(68f, 48f)
+                        )
+                        drawRect(
+                            color = Color(0xFF0D47A1),
+                            topLeft = Offset(monitorPos.x - 34f, monitorPos.y - 24f),
+                            size = Size(68f, 48f),
+                            style = Stroke(width = 3f)
+                        )
+
+                        val wardrobePos = toScreen(LobbyRoomLayout.WARDROBE_X, LobbyRoomLayout.WARDROBE_Y)
+                        drawRect(
+                            color = Color(0xFF6D4C41),
+                            topLeft = Offset(wardrobePos.x - 28f, wardrobePos.y - 32f),
+                            size = Size(56f, 64f)
+                        )
+                        drawRect(
+                            color = Color(0xFF3E2723),
+                            topLeft = Offset(wardrobePos.x - 28f, wardrobePos.y - 32f),
+                            size = Size(56f, 64f),
+                            style = Stroke(width = 3f)
+                        )
+                        drawLine(
+                            color = Color(0xFF3E2723),
+                            start = Offset(wardrobePos.x, wardrobePos.y - 32f),
+                            end = Offset(wardrobePos.x, wardrobePos.y + 32f),
+                            strokeWidth = 3f
+                        )
+
+                        viewModel.lobbyPlayerPositions.entries.forEach { (pid, pos) ->
+                            if (pid == viewModel.localPlayerId.value) return@forEach
+                            val info = viewModel.lobbyPlayers.firstOrNull { it.id == pid }
+                            val hex = info?.color ?: "#9E9E9E"
+                            val color = try {
+                                Color(android.graphics.Color.parseColor(hex))
+                            } catch (e: Exception) {
+                                Color(0xFF9E9E9E)
                             }
+                            val screenPos = toScreen(pos.x, pos.y)
+                            drawCircle(color = color, radius = 14f * scale, center = screenPos)
+                            drawCircle(
+                                color = Color.Black,
+                                radius = 14f * scale,
+                                center = screenPos,
+                                style = Stroke(width = 2f)
+                            )
+                        }
+
+                        val myHex = viewModel.lobbyPlayers
+                            .firstOrNull { it.id == viewModel.localPlayerId.value }?.color ?: "#FFD700"
+                        val myColor = try {
+                            Color(android.graphics.Color.parseColor(myHex))
+                        } catch (e: Exception) {
+                            Color(0xFFFFD700)
+                        }
+                        val myScreenPos = toScreen(playerX, playerY)
+                        drawCircle(color = myColor, radius = 15f * scale, center = myScreenPos)
+                        drawCircle(
+                            color = Color.Black,
+                            radius = 15f * scale,
+                            center = myScreenPos,
+                            style = Stroke(width = 2f)
+                        )
+
+                        val origin = joystickOrigin
+                        val knob = joystickKnob
+                        if (origin != null && knob != null) {
+                            drawCircle(color = Color(0x55FFFFFF), radius = LOBBY_JOYSTICK_BASE_RADIUS, center = origin)
+                            drawCircle(color = Color(0xCCFFFFFF), radius = LOBBY_JOYSTICK_KNOB_RADIUS, center = knob)
+                        }
+                    }
+
+                    Text(
+                        "🖥 Monitor",
+                        color = TacticalColors.TextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.align(Alignment.TopStart).padding(12.dp)
+                    )
+                    Text(
+                        "🚪 Dulap",
+                        color = TacticalColors.TextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
+                    )
+
+                    if (isNearMonitor && isHost) {
+                        Button(
+                            onClick = { showSettings = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2)),
+                            modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)
+                        ) {
+                            Text("⚙ Setari camera")
+                        }
+                    } else if (isNearMonitor && !isHost) {
+                        Text(
+                            "Doar gazda poate schimba setarile",
+                            color = TacticalColors.TextMuted,
+                            fontSize = 11.sp,
+                            modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)
+                        )
+                    }
+
+                    if (isNearWardrobe) {
+                        Button(
+                            onClick = { showWardrobe = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6D4C41)),
+                            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+                        ) {
+                            Text("🎨 Alege culoarea")
                         }
                     }
                 }
 
-                if (lobbyPlayers.isEmpty()) {
-                    item {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                errorMessage?.let { msg ->
+                    Text(
+                        text = msg,
+                        color = TacticalColors.Danger,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+
+                Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                    if (isHost) {
+                        TacticalButton(
+                            text = if (canStart) "START" else "MINIM $MIN_PLAYERS JUCATORI NECESARI",
+                            onClick = { viewModel.startGame() },
+                            enabled = canStart,
+                            isPrimary = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
                         Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "Se conecteaza...",
-                                color = TacticalColors.TextMuted
+                                text = "Se asteapta ca gazda sa inceapa jocul...",
+                                color = TacticalColors.TextSecondary
                             )
                         }
                     }
                 }
             }
 
-            errorMessage?.let { msg ->
-                Text(
-                    text = msg,
-                    color = TacticalColors.Danger,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Buton Start (doar host) sau mesaj de asteptare (jucatori normali)
-            if (isHost) {
-                TacticalButton(
-                    text = if (canStart) "START" else "MINIM $MIN_PLAYERS JUCATORI NECESARI",
-                    onClick = { viewModel.startGame() },
-                    enabled = canStart,
-                    isPrimary = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Se asteapta ca gazda sa inceapa jocul...",
-                        color = TacticalColors.TextSecondary,
-                        textAlign = TextAlign.Center
-                    )
-                }
+            IconButton(
+                onClick = { showChat = true },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 8.dp, end = 64.dp)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x66000000))
+            ) {
+                Text("💬", fontSize = 20.sp)
             }
         }
     }
 
     if (showSettings) {
         LobbySettingsDialog(viewModel = viewModel, onDismiss = { showSettings = false })
+    }
+
+    if (showWardrobe) {
+        WardrobeDialog(
+            viewModel = viewModel,
+            onDismiss = { showWardrobe = false }
+        )
+    }
+
+    if (showChat) {
+        LobbyChatDialog(
+            viewModel = viewModel,
+            isHost = isHost,
+            onDismiss = { showChat = false },
+            onModerate = { player -> playerForModeration = player }
+        )
     }
 
     if (showInviteDialog) {
@@ -292,20 +435,320 @@ fun WaitingRoomScreen(
     }
 }
 
-/** Culoare de avatar derivata deterministic din nume - fiecare jucator arata mereu la fel. */
-private fun avatarColorFor(name: String): Color {
-    val palette = listOf(
-        Color(0xFF5C6BC0), Color(0xFF00897B), Color(0xFF8D6E63),
-        Color(0xFF3949AB), Color(0xFF43A047), Color(0xFF546E7A),
-        Color(0xFF6D4C41), Color(0xFF00ACC1)
+@Composable
+private fun WardrobeDialog(viewModel: GameViewModel, onDismiss: () -> Unit) {
+    val usedColors = viewModel.lobbyPlayers
+        .filter { it.id != viewModel.localPlayerId.value && it.connected }
+        .map { it.color }
+        .toSet()
+    val myColor = viewModel.lobbyPlayers.firstOrNull { it.id == viewModel.localPlayerId.value }?.color
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = TacticalColors.Surface,
+        title = { Text("Alege-ti culoarea", color = TacticalColors.TextPrimary) },
+        text = {
+            Column {
+                LobbyRoomLayout.PLAYER_COLORS.chunked(5).forEach { rowColors ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        rowColors.forEach { hex ->
+                            val isTaken = hex in usedColors && hex != myColor
+                            val isMine = hex == myColor
+                            val color = try {
+                                Color(android.graphics.Color.parseColor(hex))
+                            } catch (e: Exception) {
+                                Color.Gray
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .border(
+                                        width = if (isMine) 3.dp else 1.dp,
+                                        color = if (isMine) Color.White else Color.Black,
+                                        shape = CircleShape
+                                    )
+                                    .then(
+                                        if (!isTaken) {
+                                            Modifier.clickable {
+                                                viewModel.choosePlayerColor(hex)
+                                                onDismiss()
+                                            }
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
+                            ) {
+                                if (isTaken) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(CircleShape)
+                                            .background(Color(0x99000000))
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Inchide", color = TacticalColors.Accent)
+            }
+        }
     )
-    val index = if (name.isEmpty()) 0 else name.sumOf { it.code } % palette.size
-    return palette[index]
+}
+
+@Composable
+private fun LobbyChatDialog(
+    viewModel: GameViewModel,
+    isHost: Boolean,
+    onDismiss: () -> Unit,
+    onModerate: (LobbyPlayerInfo) -> Unit
+) {
+    var draft by remember { mutableStateOf("") }
+    var playerToReport by remember { mutableStateOf<LobbyPlayerInfo?>(null) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.88f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(TacticalColors.Surface)
+        ) {
+            Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Chat", color = TacticalColors.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    IconButton(onClick = onDismiss) {
+                        Text("✕", color = TacticalColors.TextSecondary)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 140.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(viewModel.lobbyPlayers) { player ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(TacticalColors.SurfaceRaised)
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                val color = try {
+                                    Color(android.graphics.Color.parseColor(player.color))
+                                } catch (e: Exception) {
+                                    Color.Gray
+                                }
+                                Box(
+                                    modifier = Modifier.size(18.dp).clip(CircleShape).background(color)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(player.name, color = TacticalColors.TextPrimary, fontSize = 13.sp)
+                                if (player.id == viewModel.localPlayerId.value) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("(tu)", color = TacticalColors.Accent, fontSize = 11.sp)
+                                }
+                            }
+
+                            Row {
+                                if (player.id != viewModel.localPlayerId.value) {
+                                    TextButton(onClick = { playerToReport = player }) {
+                                        Text("🚩 Raporteaza", fontSize = 11.sp, color = TacticalColors.Danger)
+                                    }
+                                    if (isHost) {
+                                        TextButton(onClick = { onModerate(player) }) {
+                                            Text("⋮", fontSize = 14.sp, color = TacticalColors.TextSecondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider(color = TacticalColors.Border)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val listState = rememberLazyListState()
+                LaunchedEffect(viewModel.lobbyChatMessages.size) {
+                    if (viewModel.lobbyChatMessages.isNotEmpty()) {
+                        listState.animateScrollToItem(viewModel.lobbyChatMessages.size - 1)
+                    }
+                }
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(viewModel.lobbyChatMessages) { msg: LobbyChatMessageInfo ->
+                        val isMine = msg.senderId == viewModel.localPlayerId.value
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth(0.85f)
+                                .then(if (isMine) Modifier.padding(start = 40.dp) else Modifier)
+                        ) {
+                            Text(msg.senderName, color = TacticalColors.TextSecondary, fontSize = 10.sp)
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isMine) TacticalColors.AccentDim else TacticalColors.SurfaceRaised)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(msg.text, color = TacticalColors.TextPrimary, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { if (it.length <= 300) draft = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Scrie un mesaj...") },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(
+                            onSend = {
+                                if (draft.isNotBlank()) {
+                                    viewModel.sendLobbyChatMessage(draft)
+                                    draft = ""
+                                }
+                            }
+                        ),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(onClick = {
+                        if (draft.isNotBlank()) {
+                            viewModel.sendLobbyChatMessage(draft)
+                            draft = ""
+                        }
+                    }) {
+                        Text("➤", color = TacticalColors.Accent, fontSize = 20.sp)
+                    }
+                }
+            }
+        }
+    }
+
+    playerToReport?.let { target ->
+        ReportPlayerDialog(
+            player = target,
+            onDismiss = { playerToReport = null },
+            onSubmit = { reason ->
+                viewModel.reportPlayer(target.id, reason)
+                playerToReport = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun ReportPlayerDialog(
+    player: LobbyPlayerInfo,
+    onDismiss: () -> Unit,
+    onSubmit: (String) -> Unit
+) {
+    var selectedReason by remember { mutableStateOf<String?>(null) }
+
+    val categories = listOf(
+        "hacking" to "🖥 Hack",
+        "harassment" to "😠 Hartuire",
+        "bad_language" to "🤬 Vorbire proasta",
+        "name" to "🔤 Nume"
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = TacticalColors.Surface,
+        title = { Text("Raporteaza pe ${player.name}", color = TacticalColors.TextPrimary) },
+        text = {
+            Column {
+                Text(
+                    "Alege motivul raportului:",
+                    color = TacticalColors.TextSecondary,
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                categories.chunked(2).forEach { rowItems ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        rowItems.forEach { (reasonKey, label) ->
+                            val isSelected = selectedReason == reasonKey
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(64.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (isSelected) TacticalColors.AccentDim else TacticalColors.SurfaceRaised
+                                    )
+                                    .border(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) TacticalColors.Accent else TacticalColors.Border,
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable { selectedReason = reasonKey },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    label,
+                                    color = TacticalColors.TextPrimary,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { selectedReason?.let(onSubmit) },
+                enabled = selectedReason != null
+            ) {
+                Text(
+                    "Trimite",
+                    color = if (selectedReason != null) TacticalColors.Accent else TacticalColors.TextMuted,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Anuleaza", color = TacticalColors.TextSecondary)
+            }
+        }
+    )
 }
 
 @Composable
 private fun InviteFriendDialog(roomCode: String, onDismiss: () -> Unit) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val accountId = remember { PlayerPrefs.getAccountId(context) }
 
     var friends by remember { mutableStateOf<List<com.astran.russianspy.network.AccountInfo>>(emptyList()) }
