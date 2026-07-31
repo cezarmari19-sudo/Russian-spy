@@ -7,6 +7,7 @@ from models import (
     GameRoom, GamePhase, Player, Role, RoomFunction, Room,
     SpyTaskType, SpyTaskInstance, SPY_TASK_ALLOWED_FUNCTIONS, Corpse, Meeting,
     DnaSample, DnaComparisonResult, LobbyChatMessage, LobbyPosition, PlayerReport,
+    FbiTaskType, FbiTaskInstance, FBI_TASK_ALLOWED_FUNCTIONS,
 )
 
 # Paleta de culori stil Among Us - asignate jucatorilor in ordinea intrarii in
@@ -125,6 +126,13 @@ LOBBY_INTERACT_RADIUS = 80.0
 LOBBY_SPAWN_X = LOBBY_CENTRAL_X + LOBBY_CENTRAL_W / 2
 LOBBY_SPAWN_Y = LOBBY_CENTRAL_Y + LOBBY_CENTRAL_H / 2
 LOBBY_CHAT_HISTORY_LIMIT = 40
+
+# Codul Morse real pentru "SOS" ( . . .  - - -  . . . ) - fara spatii intre
+# litere, comparat direct cu secventa tradusa din butoanele A/B apasate.
+SOS_MORSE_CODE = "...---..."
+# Cate secunde trec de la primul SOS trimis cu succes pana vine CIA si
+# captureaza automat spionul (victorie FBI) - 2 minute, cerut de host.
+SOS_CIA_ARRIVAL_SECONDS = 120.0
 
 
 class GameManager:
@@ -400,6 +408,10 @@ class GameManager:
         room.phase = room.phase.__class__.IN_PROGRESS
         room.surveillance_cameras = self._generate_random_camera_spots()
         room.spy_tasks = self._generate_spy_tasks(room)
+        room.fbi_tasks = self._generate_fbi_tasks(room)
+        room.comms_unlocked = False
+        room.comms_button_a_is_dot = True
+        room.sos_sent_at_millis = 0.0
         self._generate_dna_archive(room)
         room.corpses = {}
         room.lab_machine_harvested_sample_id = None
@@ -518,6 +530,68 @@ class GameManager:
 
         return tasks
 
+    FBI_TASKS_PER_AGENT = 3
+
+    def _generate_fbi_tasks(self, room: GameRoom) -> list[FbiTaskInstance]:
+        """Genereaza FBI_TASKS_PER_AGENT (3) task-uri cosmetice PER agent FBI
+        conectat - fiecare agent are propriul set individual (assigned_player_id),
+        spre deosebire de task-urile de spion (comune, oricine spion le poate
+        face). Fara efect real in joc - doar ocupatie."""
+        rooms_by_id = {r.id: r for r in BUILDING_LAYOUT}
+        all_task_types = list(FbiTaskType)
+
+        fbi_agent_ids = [
+            pid for pid, p in room.players.items()
+            if p.connected and p.role == Role.FBI_AGENT
+        ]
+
+        tasks: list[FbiTaskInstance] = []
+        tasks_per_room: dict[str, int] = {}
+
+        for agent_id in fbi_agent_ids:
+            shuffled_types = list(all_task_types)
+            random.shuffle(shuffled_types)
+            type_index = 0
+            attempts = 0
+            agent_task_count = 0
+
+            while agent_task_count < self.FBI_TASKS_PER_AGENT and attempts < len(all_task_types) * 3:
+                task_type = shuffled_types[type_index % len(shuffled_types)]
+                type_index += 1
+                attempts += 1
+
+                allowed_functions = FBI_TASK_ALLOWED_FUNCTIONS.get(task_type.value, [])
+                valid_room_ids = [r.id for r in BUILDING_LAYOUT if r.function in allowed_functions]
+                if not valid_room_ids:
+                    continue
+
+                chosen_room_id = random.choice(valid_room_ids)
+                chosen_room = rooms_by_id[chosen_room_id]
+
+                existing_count = tasks_per_room.get(chosen_room_id, 0)
+                band_count = existing_count + 1
+                margin_x = chosen_room.width * 0.15
+                margin_y = chosen_room.height * 0.15
+                usable_width = chosen_room.width - margin_x * 2
+                band_width = usable_width / max(band_count, 1)
+                band_start = chosen_room.x + margin_x + band_width * existing_count
+                spot_x = band_start + random.random() * band_width
+                spot_y = chosen_room.y + margin_y + random.random() * (chosen_room.height - margin_y * 2)
+
+                tasks_per_room[chosen_room_id] = existing_count + 1
+
+                tasks.append(FbiTaskInstance(
+                    id=f"fbitask_{len(tasks)}_{random.randint(1000, 9999)}",
+                    task_type=task_type.value,
+                    room_id=chosen_room_id,
+                    x=spot_x,
+                    y=spot_y,
+                    assigned_player_id=agent_id,
+                ))
+                agent_task_count += 1
+
+        return tasks
+
     def complete_spy_task(self, room_code: str, player_id: str, task_id: str) -> Optional[str]:
         """Marcheaza un task de spion ca finalizat. Doar spionul insusi poate
         completa propriile task-uri (verificat prin rolul jucatorului, nu doar
@@ -562,6 +636,102 @@ class GameManager:
 
         task.is_completed = False
         return None
+
+    def complete_fbi_task(self, room_code: str, player_id: str, task_id: str) -> Optional[str]:
+        """Marcheaza un task cosmetic de FBI ca finalizat - doar agentul caruia
+        i-a fost ALOCAT acel task specific poate sa-l completeze (nu orice
+        agent, spre deosebire de task-urile de spion care sunt comune).
+        Daca dupa aceasta completare TOTI agentii FBI vii si-au terminat
+        toate task-urile, se deblocheaza automat task-ul de Comunicatii
+        (comms_unlocked=True) si se alege random functia celor 2 butoane."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        player = room.players.get(player_id)
+        if player is None or player.role != Role.FBI_AGENT:
+            return "Doar un agent FBI poate completa acest task"
+
+        task = next((t for t in room.fbi_tasks if t.id == task_id), None)
+        if task is None:
+            return "Task invalid"
+        if task.assigned_player_id != player_id:
+            return "Acest task nu iti este alocat tie"
+
+        task.is_completed = True
+
+        self._check_fbi_tasks_complete_and_unlock_comms(room)
+        return None
+
+    def _check_fbi_tasks_complete_and_unlock_comms(self, room: GameRoom):
+        """Verifica daca TOTI agentii FBI vii au terminat TOATE task-urile lor
+        cosmetice - daca da, deblocheaza task-ul de Comunicatii (o singura
+        data; nu se re-blocheaza daca cineva moare dupa aceea)."""
+        if room.comms_unlocked:
+            return
+        alive_fbi_ids = {
+            pid for pid, p in room.players.items()
+            if p.connected and p.is_alive and p.role == Role.FBI_AGENT
+        }
+        if not alive_fbi_ids:
+            return
+        tasks_by_agent: dict[str, list[FbiTaskInstance]] = {}
+        for task in room.fbi_tasks:
+            tasks_by_agent.setdefault(task.assigned_player_id, []).append(task)
+
+        all_done = all(
+            all(t.is_completed for t in tasks_by_agent.get(pid, []))
+            for pid in alive_fbi_ids
+        )
+        if all_done:
+            room.comms_unlocked = True
+            room.comms_button_a_is_dot = random.choice([True, False])
+
+    def attempt_send_sos(
+        self, room_code: str, player_id: str, symbols: list[str]
+    ) -> tuple[Optional[str], bool]:
+        """Un agent FBI viu incearca sa trimita SOS (secventa Morse) din camera
+        de Comunicatii - necesita comms_unlocked=True. `symbols` e o lista de
+        "A"/"B" (butonul apasat, in ordine) - se traduce folosind
+        comms_button_a_is_dot si se compara cu codul Morse real al SOS
+        (... --- ...). Daca e primul SOS trimis cu succes in aceasta runda,
+        porneste cronometrul de 2 minute (sos_sent_at_millis). Trimiteri
+        ulterioare (de oricine) nu mai au niciun efect suplimentar - doar
+        raporteaza din nou daca a fost corect, fara sa resetaze cronometrul.
+        Returneaza (eroare, a_fost_corect)."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista", False
+        if room.phase != GamePhase.IN_PROGRESS:
+            return "Jocul nu e in desfasurare", False
+        player = room.players.get(player_id)
+        if player is None or not player.is_alive or player.role != Role.FBI_AGENT:
+            return "Doar un agent FBI viu poate trimite SOS", False
+        if not room.comms_unlocked:
+            return "Comunicatiile nu sunt inca deblocate", False
+
+        dot_symbol = "A" if room.comms_button_a_is_dot else "B"
+        dash_symbol = "B" if room.comms_button_a_is_dot else "A"
+        translated = "".join(
+            "." if s == dot_symbol else "-" if s == dash_symbol else "?"
+            for s in symbols
+        )
+        is_correct = translated == SOS_MORSE_CODE
+
+        if is_correct and room.sos_sent_at_millis == 0.0:
+            room.sos_sent_at_millis = time.time() * 1000
+
+        return None, is_correct
+
+    def is_sos_timer_expired(self, room_code: str) -> bool:
+        """Verifica daca au trecut cele 2 minute de la primul SOS trimis cu
+        succes - folosit de un task de fundal (vezi _sos_watcher in main.py)
+        care declara victoria FBI automat cand expira, indiferent daca mai
+        vine vreo actiune de la vreun jucator intre timp."""
+        room = self.rooms.get(room_code)
+        if room is None or room.sos_sent_at_millis == 0.0:
+            return False
+        elapsed_seconds = (time.time() * 1000 - room.sos_sent_at_millis) / 1000.0
+        return elapsed_seconds >= SOS_CIA_ARRIVAL_SECONDS
 
     def kill_player(
         self, room_code: str, killer_id: str, victim_id: str,
@@ -623,6 +793,10 @@ class GameManager:
 
         victim.is_alive = False
         room.last_kill_at_millis = now_millis
+        # Daca victima era ultimul agent FBI viu cu task-uri neterminate,
+        # moartea ei poate debloca acum Comunicatiile (nu mai conteaza
+        # task-urile ei neterminate - vezi alive_fbi_ids in functia de mai jos).
+        self._check_fbi_tasks_complete_and_unlock_comms(room)
 
         corpse = Corpse(
             id=f"corpse_{len(room.corpses)}_{random.randint(1000, 9999)}",
