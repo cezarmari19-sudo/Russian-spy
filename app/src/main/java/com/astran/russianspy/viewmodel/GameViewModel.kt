@@ -19,6 +19,7 @@ import com.astran.russianspy.network.NetworkClient
 import com.astran.russianspy.network.PlayerPositionInfo
 import com.astran.russianspy.network.ServerEvent
 import com.astran.russianspy.network.SpyTaskInfo
+import com.astran.russianspy.network.FbiTaskInfo
 import com.astran.russianspy.network.CorpseInfo
 import com.astran.russianspy.network.DnaSampleInfo
 import com.astran.russianspy.network.DnaComparisonResultInfo
@@ -154,12 +155,44 @@ class GameViewModel : ViewModel() {
     val allSpyTasksCompleted: Boolean
         get() = spyTasks.isNotEmpty() && spyTasks.all { it.isCompleted }
 
+    // Task-urile cosmetice alocate DOAR agentului FBI local - gol daca esti
+    // spion sau daca jocul nu a inceput inca.
+    val fbiTasks = mutableStateListOf<FbiTaskInfo>()
+
+    // True cand Comunicatiile (SOS Morse) s-au deblocat - toti agentii FBI
+    // vii si-au terminat task-urile cosmetice.
+    private val _commsUnlocked = mutableStateOf(false)
+    val commsUnlocked: State<Boolean> = _commsUnlocked
+
+    // Rezultatul ultimei incercari de SOS trimise de jucatorul local (null
+    // pana la prima incercare) - folosit pentru feedback vizual in
+    // CommunicationsScreen, apoi resetat de ecran dupa afisare.
+    private val _sosResult = mutableStateOf<Boolean?>(null)
+    val sosResult: State<Boolean?> = _sosResult
+
     fun completeSpyTask(taskId: String) {
         networkClient?.sendCompleteSpyTask(taskId)
     }
 
     fun disableSpyDevice(taskId: String) {
         networkClient?.sendDisableSpyDevice(taskId)
+    }
+
+    /** Marcheaza un task cosmetic de FBI ca finalizat. */
+    fun completeFbiTask(taskId: String) {
+        networkClient?.sendCompleteFbiTask(taskId)
+    }
+
+    /** Trimite o incercare de SOS Morse - symbols e lista de "A"/"B" in
+     * ordinea apasarii butoanelor. */
+    fun attemptSendSos(symbols: List<String>) {
+        networkClient?.sendAttemptSendSos(symbols)
+    }
+
+    /** Apelat de CommunicationsScreen dupa ce a afisat rezultatul, ca sa nu
+     * ramana "agatat" pentru urmatoarea incercare. */
+    fun acknowledgeSosResult() {
+        _sosResult.value = null
     }
 
     // Corpurile aparute pe harta in runda curenta - vizibile pentru TOTI
@@ -359,6 +392,9 @@ class GameViewModel : ViewModel() {
         lobbyPlayers.clear()
         playerNames.clear()
         spyTasks.clear()
+        fbiTasks.clear()
+        _commsUnlocked.value = false
+        _sosResult.value = null
         corpses.clear()
         dnaSamples.clear()
         _labMachineHarvestedSampleId.value = null
@@ -400,6 +436,9 @@ class GameViewModel : ViewModel() {
         playerNames.clear()
         surveillanceCameraSpots.clear()
         spyTasks.clear()
+        fbiTasks.clear()
+        _commsUnlocked.value = false
+        _sosResult.value = null
         corpses.clear()
         dnaSamples.clear()
         _labMachineHarvestedSampleId.value = null
@@ -612,6 +651,24 @@ class GameViewModel : ViewModel() {
                 if (index >= 0) {
                     spyTasks[index] = spyTasks[index].copy(isCompleted = event.isCompleted)
                 }
+            }
+            is ServerEvent.FbiTasksAssigned -> {
+                // Ajunge STRICT la agentul caruia ii sunt alocate (serverul
+                // nu trimite task-urile altui agent) - populam lista completa.
+                fbiTasks.clear()
+                fbiTasks.addAll(event.tasks)
+            }
+            is ServerEvent.FbiTaskUpdated -> {
+                val index = fbiTasks.indexOfFirst { it.id == event.taskId }
+                if (index >= 0) {
+                    fbiTasks[index] = fbiTasks[index].copy(isCompleted = event.isCompleted)
+                }
+            }
+            is ServerEvent.CommsUnlocked -> {
+                _commsUnlocked.value = true
+            }
+            is ServerEvent.SosResult -> {
+                _sosResult.value = event.correct
             }
             is ServerEvent.SpyTaskWitnessed -> {
                 // Task-ul a esuat pentru ca un agent FBI era in aceeasi camera -
