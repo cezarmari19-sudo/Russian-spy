@@ -911,6 +911,8 @@ private fun ModeratePlayerDialog(
 private fun LobbySettingsDialog(viewModel: GameViewModel, onDismiss: () -> Unit) {
     val isPrivate by viewModel.roomIsPrivate
     val isUpdating by viewModel.roomPrivacyUpdating
+    val spyTaskCount by viewModel.spyTaskCount
+    val fbiTaskCount by viewModel.fbiTaskCount
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -951,12 +953,54 @@ private fun LobbySettingsDialog(viewModel: GameViewModel, onDismiss: () -> Unit)
                     )
                 }
 
+                Spacer(modifier = Modifier.height(20.dp))
+                HorizontalDivider(color = TacticalColors.TextSecondary.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    "Setarile de joc (numar spioni, durata task-uri etc.) vor fi adaugate aici in curand.",
+                    text = "Task-uri spion: $spyTaskCount",
+                    color = TacticalColors.TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+                Text(
+                    text = "Cate task-uri alege serverul, random, pentru spion in fiecare runda.",
                     color = TacticalColors.TextSecondary,
-                    fontSize = 13.sp
+                    fontSize = 12.sp
+                )
+                Slider(
+                    value = spyTaskCount.toFloat(),
+                    onValueChange = { viewModel.setSpyTaskCount(it.toInt()) },
+                    valueRange = 2f..20f,
+                    steps = 17,
+                    colors = SliderDefaults.colors(
+                        thumbColor = TacticalColors.Accent,
+                        activeTrackColor = TacticalColors.Accent
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Task-uri FBI (per agent): $fbiTaskCount",
+                    color = TacticalColors.TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+                Text(
+                    text = "Cate task-uri cosmetice primeste FIECARE agent FBI in parte.",
+                    color = TacticalColors.TextSecondary,
+                    fontSize = 12.sp
+                )
+                Slider(
+                    value = fbiTaskCount.toFloat(),
+                    onValueChange = { viewModel.setFbiTaskCount(it.toInt()) },
+                    valueRange = 1f..10f,
+                    steps = 8,
+                    colors = SliderDefaults.colors(
+                        thumbColor = TacticalColors.Accent,
+                        activeTrackColor = TacticalColors.Accent
+                    )
                 )
             }
         },
