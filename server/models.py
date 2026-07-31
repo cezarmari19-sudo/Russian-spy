@@ -369,6 +369,62 @@ class PlayerReport:
         }
 
 
+class FbiTaskType(str, Enum):
+    """Catalogul de task-uri COSMETICE pentru agentii FBI - la fel ca la spion,
+    dar fara niciun efect real in joc (doar ocupatie, stil Among Us). Nu
+    conteaza spre nicio conditie de victorie - task-ul real de Comunicatii
+    (SOS Morse) e separat si are efect real, vezi GameRoom mai jos."""
+    CHECK_EVIDENCE_LOCKER = "CHECK_EVIDENCE_LOCKER"
+    FILE_INCIDENT_REPORT = "FILE_INCIDENT_REPORT"
+    INSPECT_BADGE_SCANNER = "INSPECT_BADGE_SCANNER"
+    CALIBRATE_METAL_DETECTOR = "CALIBRATE_METAL_DETECTOR"
+    REVIEW_PERSONNEL_FILES = "REVIEW_PERSONNEL_FILES"
+
+
+FBI_TASK_DURATIONS_SECONDS: dict[str, float] = {
+    FbiTaskType.CHECK_EVIDENCE_LOCKER.value: 3.0,
+    FbiTaskType.FILE_INCIDENT_REPORT.value: 5.0,
+    FbiTaskType.INSPECT_BADGE_SCANNER.value: 2.0,
+    FbiTaskType.CALIBRATE_METAL_DETECTOR.value: 6.0,
+    FbiTaskType.REVIEW_PERSONNEL_FILES.value: 4.0,
+}
+
+FBI_TASK_ALLOWED_FUNCTIONS: dict[str, list] = {
+    FbiTaskType.CHECK_EVIDENCE_LOCKER.value: [RoomFunction.FORENSICS_LAB, RoomFunction.ARMORY],
+    FbiTaskType.FILE_INCIDENT_REPORT.value: [RoomFunction.OFFICE],
+    FbiTaskType.INSPECT_BADGE_SCANNER.value: [RoomFunction.ENTRANCE, RoomFunction.OFFICE],
+    FbiTaskType.CALIBRATE_METAL_DETECTOR.value: [RoomFunction.ARMORY],
+    FbiTaskType.REVIEW_PERSONNEL_FILES.value: [RoomFunction.OFFICE, RoomFunction.BREAK_ROOM],
+}
+
+
+@dataclass
+class FbiTaskInstance:
+    """O instanta CONCRETA a unui task cosmetic de FBI, ALOCATA UNUI SINGUR
+    agent (assigned_player_id) - spre deosebire de task-urile de spion (comune,
+    oricare spion le poate face), fiecare agent FBI viu primeste propriul set
+    de task-uri individuale la start_game. Fara nicio mecanica de dezactivare
+    (nu exista "obiect plasat" ca la spion)."""
+    id: str
+    task_type: str
+    room_id: str
+    x: float
+    y: float
+    assigned_player_id: str
+    is_completed: bool = False
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "taskType": self.task_type,
+            "roomId": self.room_id,
+            "x": self.x,
+            "y": self.y,
+            "assignedPlayerId": self.assigned_player_id,
+            "isCompleted": self.is_completed,
+        }
+
+
 @dataclass
 class GameRoom:
     """Reprezinta o camera/lobby de joc (partida), nu o camera fizica din cladire."""
@@ -430,3 +486,23 @@ class GameRoom:
     # ce motiv) - DOAR inregistrate, nu declanseaza nicio actiune automata
     # (fara ban/kick automat). Utile eventual pentru moderare manuala ulterioara.
     player_reports: list["PlayerReport"] = field(default_factory=list)
+    # Task-urile cosmetice de FBI ale RUNDEI curente - fiecare agent FBI viu
+    # primeste propriul set (assigned_player_id), generate la start_game().
+    # Fara efect real in joc - doar ocupatie, ca la Among Us.
+    fbi_tasks: list["FbiTaskInstance"] = field(default_factory=list)
+    # Task-ul de Comunicatii (SOS Morse) - se deblocheaza DOAR cand toti
+    # agentii FBI VII au terminat toate task-urile cosmetice de mai sus.
+    # Odata deblocat, ORICE agent FBI viu poate incerca sa trimita SOS din
+    # camera COMMS_MONITOR (cifru Morse + 2 butoane cu functie randomizata -
+    # vezi comms_button_a_is_dot). La primul SOS trimis cu succes, se
+    # inregistreaza sos_sent_at_millis - un cronometru de 2 minute (INVIZIBIL
+    # pentru toti jucatorii, deocamdata) porneste de acolo; la expirare, FBI
+    # castiga automat (CIA "captureaza" spionul). Trimiteri ulterioare de SOS
+    # (de oricine, inclusiv spionul) nu au niciun efect suplimentar.
+    comms_unlocked: bool = False
+    # Care buton (A=stanga/albastru, B=dreapta/rosu) reprezinta PUNCTUL,
+    # ales random o singura data cand comms_unlocked devine True - la fel
+    # pentru toata runda, ca sa nu se poata "invata" din incercari anterioare
+    # ale altui agent (fiecare runda noua = alta alocare random).
+    comms_button_a_is_dot: bool = True
+    sos_sent_at_millis: float = 0.0
