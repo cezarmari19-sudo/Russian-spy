@@ -73,7 +73,9 @@ async def broadcast_lobby_update(room_code: str):
     await broadcast_to_room(room_code, {
         "type": "lobby_update",
         "players": players_payload,
-        "hostId": room.host_id
+        "hostId": room.host_id,
+        "spyTaskCount": room.spy_task_count,
+        "fbiTaskCount": room.fbi_task_count
     })
 
 
@@ -408,6 +410,17 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                 else:
                     await broadcast_to_room(room_code, {
                         "type": "spy_task_count_changed",
+                        "count": count
+                    })
+
+            elif action == "set_fbi_task_count":
+                count = data.get("count", 3)
+                error = game_manager.set_fbi_task_count(room_code, player_id, count)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    await broadcast_to_room(room_code, {
+                        "type": "fbi_task_count_changed",
                         "count": count
                     })
 
