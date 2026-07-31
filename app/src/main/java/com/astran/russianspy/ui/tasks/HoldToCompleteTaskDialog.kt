@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -95,6 +96,11 @@ fun HoldToCompleteTaskDialog(
                 "HACK_SURVEILLANCE_CAMERA" -> HackSurveillanceCameraMinigame(durationSeconds, accentColor, wrappedOnComplete)
                 "SEND_ENCRYPTED_MESSAGE" -> SendEncryptedMessageMinigame(durationSeconds, accentColor, wrappedOnComplete)
                 "ERASE_FORENSIC_EVIDENCE" -> EraseForensicEvidenceMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "CHECK_EVIDENCE_LOCKER" -> CheckEvidenceLockerMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "FILE_INCIDENT_REPORT" -> FileIncidentReportMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "INSPECT_BADGE_SCANNER" -> InspectBadgeScannerMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "CALIBRATE_METAL_DETECTOR" -> CalibrateMetalDetectorMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "REVIEW_PERSONNEL_FILES" -> ReviewPersonnelFilesMinigame(durationSeconds, accentColor, wrappedOnComplete)
                 else -> HoldToCompleteCore(durationSeconds, accentColor, wrappedOnComplete)
             }
 
@@ -732,6 +738,480 @@ private fun EraseForensicEvidenceMinigame(
             color = Color.White.copy(alpha = 0.6f),
             fontSize = 13.sp
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 7) CHECK_EVIDENCE_LOCKER (~3s) - "Seal check": apasa doar cutiile cu sigiliu
+//    intact (verde), evita-le pe cele rupte (rosu), pana le bifezi pe toate
+//    cele bune.
+// ---------------------------------------------------------------------------
+@Composable
+private fun CheckEvidenceLockerMinigame(
+    durationSeconds: Float,
+    accentColor: Color,
+    onComplete: () -> Unit
+) {
+    val boxCount = 6
+    val sealedFlags = remember { List(boxCount) { Random.nextBoolean() }.let { flags ->
+        // garanteaza cel putin 2 sigilate si 2 rupte, ca sa fie interesant
+        if (flags.count { it } < 2 || flags.count { !it } < 2) {
+            (0 until boxCount).map { it % 2 == 0 }.shuffled(Random(System.nanoTime()))
+        } else flags
+    } }
+    var checked by remember { mutableStateOf(List(boxCount) { false }) }
+    var wrongFlash by remember { mutableStateOf(false) }
+
+    val goodCount = sealedFlags.count { it }
+    val goodChecked = checked.indices.count { checked[it] && sealedFlags[it] }
+
+    LaunchedEffect(goodChecked) {
+        if (goodChecked >= goodCount) {
+            delay(150)
+            onComplete()
+        }
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "Bifeaza doar cutiile cu sigiliu intact",
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 13.sp
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            for (row in 0..1) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for (col in 0..2) {
+                        val idx = row * 3 + col
+                        val isSealed = sealedFlags[idx]
+                        val isChecked = checked[idx]
+                        Box(
+                            modifier = Modifier
+                                .size(70.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    when {
+                                        isChecked && isSealed -> NEON_GREEN.copy(alpha = 0.3f)
+                                        isChecked && !isSealed -> NEON_RED.copy(alpha = 0.3f)
+                                        else -> Color.White.copy(alpha = 0.08f)
+                                    }
+                                )
+                                .border(1.dp, accentColor.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                                .clickable(enabled = !isChecked) {
+                                    checked = checked.toMutableList().also { it[idx] = true }
+                                    if (!isSealed) {
+                                        wrongFlash = true
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (!isChecked) "📦" else if (isSealed) "✓" else "✗",
+                                fontSize = 22.sp,
+                                color = if (isChecked && !isSealed) NEON_RED else Color.White
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = if (wrongFlash) "Sigiliu rupt - alege alta cutie" else "$goodChecked/$goodCount sigilii confirmate",
+            color = if (wrongFlash) NEON_RED else Color.White.copy(alpha = 0.6f),
+            fontSize = 13.sp
+        )
+    }
+
+    LaunchedEffect(wrongFlash) {
+        if (wrongFlash) {
+            delay(500)
+            wrongFlash = false
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 8) FILE_INCIDENT_REPORT (~5s) - "Fill the form": apasa in ordine casutele
+//    de bifat ale formularului, de sus in jos.
+// ---------------------------------------------------------------------------
+@Composable
+private fun FileIncidentReportMinigame(
+    durationSeconds: Float,
+    accentColor: Color,
+    onComplete: () -> Unit
+) {
+    val fields = listOf("Data", "Locatie", "Ofiter", "Descriere", "Semnatura")
+    var filledCount by remember { mutableStateOf(0) }
+
+    LaunchedEffect(filledCount) {
+        if (filledCount >= fields.size) {
+            delay(150)
+            onComplete()
+        }
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "Completeaza rubricile raportului, in ordine",
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 13.sp
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.8f)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color.White.copy(alpha = 0.05f))
+                .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+                .padding(vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            fields.forEachIndexed { i, label ->
+                val isDone = i < filledCount
+                val isNext = i == filledCount
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = isNext) { filledCount += 1 }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(
+                                if (isDone) NEON_GREEN.copy(alpha = 0.4f)
+                                else Color.White.copy(alpha = 0.08f)
+                            )
+                            .border(
+                                1.dp,
+                                if (isNext) accentColor else Color.White.copy(alpha = 0.2f),
+                                RoundedCornerShape(4.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isDone) Text("✓", color = Color.White, fontSize = 12.sp)
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = label,
+                        color = if (isNext) Color.White else Color.White.copy(alpha = 0.5f),
+                        fontSize = 14.sp,
+                        fontWeight = if (isNext) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = "$filledCount/${fields.size} completate",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 13.sp
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 9) INSPECT_BADGE_SCANNER (~2s) - "Swipe the badge": trage insigna prin
+//    fanta scanerului cu viteza potrivita, nici prea incet, nici prea repede.
+// ---------------------------------------------------------------------------
+@Composable
+private fun InspectBadgeScannerMinigame(
+    durationSeconds: Float,
+    accentColor: Color,
+    onComplete: () -> Unit
+) {
+    var badgeProgress by remember { mutableStateOf(0f) }
+    var trackWidthPx by remember { mutableStateOf(1f) }
+    var message by remember { mutableStateOf("") }
+    var lastDragTime by remember { mutableStateOf(0L) }
+    var tooFast by remember { mutableStateOf(false) }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "Trage insigna prin scaner, cu viteza constanta",
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 13.sp
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.85f)
+                .height(60.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.Black.copy(alpha = 0.4f))
+                .border(1.dp, accentColor.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                .pointerInput(Unit) {
+                    trackWidthPx = size.width.toFloat()
+                    detectDragGestures(
+                        onDragStart = { lastDragTime = System.currentTimeMillis() },
+                        onDragEnd = {
+                            if (badgeProgress < 0.98f) {
+                                badgeProgress = 0f
+                                message = ""
+                            }
+                        },
+                        onDragCancel = {
+                            badgeProgress = 0f
+                            message = ""
+                        }
+                    ) { change, dragAmount ->
+                        change.consume()
+                        val now = System.currentTimeMillis()
+                        val dt = (now - lastDragTime).coerceAtLeast(1)
+                        lastDragTime = now
+                        val speed = abs(dragAmount.x) / dt // px per ms
+                        tooFast = speed > 3.5f
+
+                        if (!tooFast) {
+                            val deltaFrac = dragAmount.x / trackWidthPx
+                            badgeProgress = (badgeProgress + deltaFrac).coerceIn(0f, 1f)
+                            if (badgeProgress >= 0.98f) {
+                                message = "Scanat!"
+                                onComplete()
+                            }
+                        } else {
+                            message = "Prea repede"
+                        }
+                    }
+                },
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .align(Alignment.Center)
+                    .background(accentColor.copy(alpha = 0.3f))
+            )
+            Box(
+                modifier = Modifier
+                    .offset {
+                        IntOffset(
+                            (badgeProgress * (trackWidthPx - 90f)).toInt().coerceAtLeast(0),
+                            0
+                        )
+                    }
+                    .size(width = 70.dp, height = 44.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (tooFast) NEON_RED else accentColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("🪪", fontSize = 20.sp)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = if (message.isNotEmpty()) message else "${(badgeProgress * 100).toInt()}%",
+            color = if (tooFast) NEON_RED else Color.White.copy(alpha = 0.6f),
+            fontSize = 13.sp
+        )
+    }
+
+    LaunchedEffect(tooFast) {
+        if (tooFast) {
+            delay(400)
+            tooFast = false
+            message = ""
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 10) CALIBRATE_METAL_DETECTOR (~6s) - "Hit the zone": un ac oscileaza pe un
+//     cadran; apasa cand acul e in zona verde, de mai multe ori la rand.
+// ---------------------------------------------------------------------------
+@Composable
+private fun CalibrateMetalDetectorMinigame(
+    durationSeconds: Float,
+    accentColor: Color,
+    onComplete: () -> Unit
+) {
+    val targetHits = if (durationSeconds <= 4f) 3 else 4
+    var hits by remember { mutableStateOf(0) }
+    var message by remember { mutableStateOf("") }
+    val needle = remember { Animatable(0f) }
+    val zoneCenter = 0.5f
+    val zoneHalfWidth = 0.12f
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(hits) {
+        if (hits >= targetHits) {
+            onComplete()
+            return@LaunchedEffect
+        }
+        needle.snapTo(0f)
+        needle.animateTo(
+            1f,
+            animationSpec = tween((1400 - hits * 120).coerceAtLeast(700), easing = LinearEasing)
+        )
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "Apasa cand acul e in zona verde ($hits/$targetHits)",
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 13.sp
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.85f)
+                .height(48.dp)
+                .clickable {
+                    // acul merge 0->1->0 pe durata tween-ului; folosim o functie
+                    // triunghi din valoarea animata pentru pozitia vizuala reala
+                    val raw = needle.value
+                    val pos = if (raw <= 1f) raw else 1f
+                    val triangular = if (pos < 0.5f) pos * 2f else (1f - pos) * 2f
+                    val inZone = abs(triangular - zoneCenter) < zoneHalfWidth
+                    if (inZone) {
+                        message = "Bun!"
+                        scope.launch { hits += 1 }
+                    } else {
+                        message = "Rateaza - reincearca"
+                        hits = 0
+                    }
+                }
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val h = size.height
+                val w = size.width
+                // fundal
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.08f),
+                    cornerRadius = CornerRadius(8.dp.toPx())
+                )
+                // zona tinta (verde)
+                val zoneStart = (zoneCenter - zoneHalfWidth) * w
+                val zoneWidth = (zoneHalfWidth * 2f) * w
+                drawRoundRect(
+                    color = NEON_GREEN.copy(alpha = 0.35f),
+                    topLeft = Offset(zoneStart, 0f),
+                    size = Size(zoneWidth, h),
+                    cornerRadius = CornerRadius(4.dp.toPx())
+                )
+                // pozitia acului (functie triunghi: 0 -> w -> 0)
+                val raw = needle.value.coerceIn(0f, 1f)
+                val triangular = if (raw < 0.5f) raw * 2f else (1f - raw) * 2f
+                val needleX = triangular * w
+                drawLine(
+                    color = accentColor,
+                    start = Offset(needleX, 0f),
+                    end = Offset(needleX, h),
+                    strokeWidth = 4.dp.toPx()
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = message.ifEmpty { "Apasa ecranul cand acul trece prin verde" },
+            color = if (message == "Bun!") NEON_GREEN else if (message.startsWith("Rateaza")) NEON_RED else Color.White.copy(alpha = 0.5f),
+            fontSize = 13.sp
+        )
+    }
+
+    LaunchedEffect(message) {
+        if (message.isNotEmpty()) {
+            delay(500)
+            message = ""
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 11) REVIEW_PERSONNEL_FILES (~4s) - "Odd one out": gaseste dosarul cu numarul
+//     diferit de restul, de cateva ori la rand.
+// ---------------------------------------------------------------------------
+@Composable
+private fun ReviewPersonnelFilesMinigame(
+    durationSeconds: Float,
+    accentColor: Color,
+    onComplete: () -> Unit
+) {
+    val totalRounds = if (durationSeconds <= 3f) 2 else 3
+    var round by remember { mutableStateOf(1) }
+    var wrongFlash by remember { mutableStateOf(false) }
+
+    // 6 dosare, toate cu acelasi numar de referinta, unul singur diferit
+    var oddIndex by remember(round) { mutableStateOf(Random.nextInt(6)) }
+    val baseNumber = remember(round) { Random.nextInt(100, 900) }
+    val oddNumber = remember(round) { baseNumber + (Random.nextInt(1, 9)) }
+
+    LaunchedEffect(round) {
+        if (round > totalRounds) {
+            onComplete()
+        }
+    }
+
+    if (round > totalRounds) return
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = "Gaseste dosarul cu numarul diferit (runda $round/$totalRounds)",
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 13.sp
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            for (row in 0..1) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for (col in 0..2) {
+                        val idx = row * 3 + col
+                        val isOdd = idx == oddIndex
+                        val displayNumber = if (isOdd) oddNumber else baseNumber
+                        Box(
+                            modifier = Modifier
+                                .size(width = 76.dp, height = 56.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.White.copy(alpha = 0.08f))
+                                .border(1.dp, accentColor.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    if (isOdd) {
+                                        round += 1
+                                    } else {
+                                        wrongFlash = true
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "#$displayNumber",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = if (wrongFlash) "Nu e acesta - mai incearca" else "Compara numerele de pe dosare",
+            color = if (wrongFlash) NEON_RED else Color.White.copy(alpha = 0.5f),
+            fontSize = 12.sp
+        )
+    }
+
+    LaunchedEffect(wrongFlash) {
+        if (wrongFlash) {
+            delay(400)
+            wrongFlash = false
+        }
     }
 }
 
