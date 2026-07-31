@@ -20,7 +20,12 @@ sealed class ServerEvent {
     data class SurveillanceEvent(val eventType: String, val fromRoomId: String) : ServerEvent()
     data class SurveillanceCamerasAssigned(val spots: List<CameraSpotInfo>) : ServerEvent()
     data class PlayerDisconnected(val playerId: String) : ServerEvent()
-    data class LobbyUpdate(val players: List<LobbyPlayerInfo>, val hostId: String) : ServerEvent()
+    data class LobbyUpdate(
+        val players: List<LobbyPlayerInfo>,
+        val hostId: String,
+        val spyTaskCount: Int? = null,
+        val fbiTaskCount: Int? = null
+    ) : ServerEvent()
     object RoomDeleted : ServerEvent()
     object YouWereKicked : ServerEvent()
     object YouWereBanned : ServerEvent()
@@ -41,6 +46,7 @@ sealed class ServerEvent {
      * cineva a reusit deja - cronometrul ramane invizibil). */
     data class SosResult(val correct: Boolean) : ServerEvent()
     data class SpyTaskCountChanged(val count: Int) : ServerEvent()
+    data class FbiTaskCountChanged(val count: Int) : ServerEvent()
     data class SpyTaskUpdated(val taskId: String, val isCompleted: Boolean) : ServerEvent()
     data class SpyTaskWitnessed(val taskId: String) : ServerEvent()
     data class GameOver(val winner: String) : ServerEvent()
@@ -451,7 +457,14 @@ class NetworkClient(
                         color = p.optString("color", "#9E9E9E")
                     )
                 }
-                onEvent(ServerEvent.LobbyUpdate(players, hostId = json.optString("hostId", "")))
+                onEvent(
+                    ServerEvent.LobbyUpdate(
+                        players,
+                        hostId = json.optString("hostId", ""),
+                        spyTaskCount = if (json.has("spyTaskCount")) json.optInt("spyTaskCount") else null,
+                        fbiTaskCount = if (json.has("fbiTaskCount")) json.optInt("fbiTaskCount") else null
+                    )
+                )
             }
             "error" -> onEvent(ServerEvent.Error(json.optString("message", "Eroare necunoscuta")))
             "room_deleted" -> onEvent(ServerEvent.RoomDeleted)
@@ -505,6 +518,9 @@ class NetworkClient(
             "sos_result" -> onEvent(ServerEvent.SosResult(correct = json.getBoolean("correct")))
             "spy_task_count_changed" -> onEvent(
                 ServerEvent.SpyTaskCountChanged(count = json.getInt("count"))
+            )
+            "fbi_task_count_changed" -> onEvent(
+                ServerEvent.FbiTaskCountChanged(count = json.getInt("count"))
             )
             "spy_task_updated" -> onEvent(
                 ServerEvent.SpyTaskUpdated(
@@ -670,6 +686,14 @@ class NetworkClient(
     fun sendSetSpyTaskCount(count: Int) {
         send(JSONObject().apply {
             put("action", "set_spy_task_count")
+            put("count", count)
+        })
+    }
+
+    /** Doar host-ul poate seta acest numar, si doar in LOBBY (verificat pe server). */
+    fun sendSetFbiTaskCount(count: Int) {
+        send(JSONObject().apply {
+            put("action", "set_fbi_task_count")
             put("count", count)
         })
     }
