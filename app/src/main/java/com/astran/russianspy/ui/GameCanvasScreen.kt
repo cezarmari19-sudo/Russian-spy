@@ -464,6 +464,8 @@ fun GameCanvasScreen(
                 playerY = playerY,
                 myRole = viewModel.myRole.value,
                 spyTasks = viewModel.spyTasks,
+                fbiTasks = viewModel.fbiTasks,
+                myPlayerId = viewModel.localPlayerId.value,
                 onDismiss = { showMiniMap = false }
             )
         }
@@ -1035,6 +1037,8 @@ private fun MiniMapDialog(
     playerY: Float,
     myRole: Role?,
     spyTasks: List<SpyTaskInfo>,
+    fbiTasks: List<FbiTaskInfo>,
+    myPlayerId: String,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -1088,6 +1092,24 @@ private fun MiniMapDialog(
                             }
                         }
 
+                        // Task-urile FBI nefinalizate, vizibile DOAR pentru agentul
+                        // caruia ii sunt alocate - fiecare agent isi vede doar propriile
+                        // task-uri pe harta, nu pe ale colegilor.
+                        if (myRole == Role.FBI_AGENT) {
+                            fbiTasks.filter { !it.isCompleted && it.assignedPlayerId == myPlayerId }.forEach { task ->
+                                drawCircle(
+                                    color = Color(0xFF1976D2).copy(alpha = 0.35f),
+                                    radius = 16f,
+                                    center = Offset(task.x * scaleX, task.y * scaleY)
+                                )
+                                drawCircle(
+                                    color = Color(0xFF1976D2),
+                                    radius = 9f,
+                                    center = Offset(task.x * scaleX, task.y * scaleY)
+                                )
+                            }
+                        }
+
                         // Pozitia jucatorului (punct galben, ca in joc)
                         drawCircle(
                             color = Color(0xFFFFD700),
@@ -1122,6 +1144,18 @@ private fun MiniMapDialog(
                                 .size(10.dp)
                                 .clip(RoundedCornerShape(50))
                                 .background(Color(0xFFE53935))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Task ramas", color = Color(0xFFCCCCCC), fontSize = 12.sp)
+                    }
+
+                    if (myRole == Role.FBI_AGENT) {
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(Color(0xFF1976D2))
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Task ramas", color = Color(0xFFCCCCCC), fontSize = 12.sp)
