@@ -15,6 +15,7 @@ object Routes {
     const val FORENSICS_TASK = "forensics_task"
     const val MORGUE = "morgue"
     const val DNA_ARCHIVE = "dna_archive"
+    const val COMMUNICATIONS = "communications"
     const val PHONE_TASK = "phone_task"
     const val PLANT_BOMB_TASK = "plant_bomb_task"
     const val REPORT_BODY = "report_body"
