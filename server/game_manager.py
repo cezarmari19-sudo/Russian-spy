@@ -448,7 +448,7 @@ class GameManager:
             )
 
     def set_spy_task_count(self, room_code: str, requesting_player_id: str, count: int) -> Optional[str]:
-        """Doar host-ul poate seta cate task-uri primeste spionul (2-12), si doar
+        """Doar host-ul poate seta cate task-uri primeste spionul (2-20), si doar
         inainte ca jocul sa inceapa (in LOBBY) - schimbarea in timpul meciului
         nu are sens, task-urile sunt deja alocate."""
         room = self.rooms.get(room_code)
@@ -458,9 +458,24 @@ class GameManager:
             return "Doar hostul poate schimba aceasta setare"
         if room.phase != GamePhase.LOBBY:
             return "Nu poti schimba numarul de task-uri in timpul meciului"
-        if count < 2 or count > 12:
-            return "Numarul de task-uri trebuie sa fie intre 2 si 12"
+        if count < 2 or count > 20:
+            return "Numarul de task-uri trebuie sa fie intre 2 si 20"
         room.spy_task_count = count
+        return None
+
+    def set_fbi_task_count(self, room_code: str, requesting_player_id: str, count: int) -> Optional[str]:
+        """Doar host-ul poate seta cate task-uri primeste FIECARE agent FBI
+        (1-10), si doar inainte ca jocul sa inceapa (in LOBBY)."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if requesting_player_id != room.host_id:
+            return "Doar hostul poate schimba aceasta setare"
+        if room.phase != GamePhase.LOBBY:
+            return "Nu poti schimba numarul de task-uri in timpul meciului"
+        if count < 1 or count > 10:
+            return "Numarul de task-uri trebuie sa fie intre 1 si 10"
+        room.fbi_task_count = count
         return None
 
     def _generate_spy_tasks(self, room: GameRoom) -> list[SpyTaskInstance]:
@@ -530,15 +545,15 @@ class GameManager:
 
         return tasks
 
-    FBI_TASKS_PER_AGENT = 3
-
     def _generate_fbi_tasks(self, room: GameRoom) -> list[FbiTaskInstance]:
-        """Genereaza FBI_TASKS_PER_AGENT (3) task-uri cosmetice PER agent FBI
-        conectat - fiecare agent are propriul set individual (assigned_player_id),
-        spre deosebire de task-urile de spion (comune, oricine spion le poate
-        face). Fara efect real in joc - doar ocupatie."""
+        """Genereaza room.fbi_task_count task-uri PER agent FBI conectat -
+        fiecare agent are propriul set individual (assigned_player_id), spre
+        deosebire de task-urile de spion (comune, oricine spion le poate
+        face). Numarul e configurabil de host din lobby (1-10), la fel ca
+        spy_task_count."""
         rooms_by_id = {r.id: r for r in BUILDING_LAYOUT}
         all_task_types = list(FbiTaskType)
+        tasks_per_agent = room.fbi_task_count
 
         fbi_agent_ids = [
             pid for pid, p in room.players.items()
@@ -555,7 +570,7 @@ class GameManager:
             attempts = 0
             agent_task_count = 0
 
-            while agent_task_count < self.FBI_TASKS_PER_AGENT and attempts < len(all_task_types) * 3:
+            while agent_task_count < tasks_per_agent and attempts < len(all_task_types) * 3:
                 task_type = shuffled_types[type_index % len(shuffled_types)]
                 type_index += 1
                 attempts += 1
