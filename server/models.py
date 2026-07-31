@@ -40,6 +40,20 @@ class SpyTaskType(str, Enum):
     HACK_SURVEILLANCE_CAMERA = "HACK_SURVEILLANCE_CAMERA"  # lung - instaleaza sistem de spionat pe camera
     SEND_ENCRYPTED_MESSAGE = "SEND_ENCRYPTED_MESSAGE"   # mediu - trimite mesaj cifrat
     ERASE_FORENSIC_EVIDENCE = "ERASE_FORENSIC_EVIDENCE"  # lung - sterge probe criminalistice
+    BUG_PHONE_LINE = "BUG_PHONE_LINE"                   # mediu - intercepteaza linia telefonica
+    COPY_KEYCARD = "COPY_KEYCARD"                       # rapid - cloneaza cartela de acces
+    BRIBE_GUARD = "BRIBE_GUARD"                         # mediu - mituieste garda de la intrare
+    SABOTAGE_ALARM = "SABOTAGE_ALARM"                   # mediu - sacrifica sistemul de alarma
+    SMUGGLE_WEAPON = "SMUGGLE_WEAPON"                   # lung - introduce o arma neobservat
+    DECODE_INTERCEPT = "DECODE_INTERCEPT"               # mediu - decodeaza un mesaj interceptat
+    FORGE_SIGNATURE = "FORGE_SIGNATURE"                 # rapid - falsifica o semnatura
+    SEARCH_FILES = "SEARCH_FILES"                       # mediu - cauta documentul potrivit
+    TAMPER_DNA_SAMPLE = "TAMPER_DNA_SAMPLE"             # lung - altereaza o proba ADN
+    SWAP_DNA_LABEL = "SWAP_DNA_LABEL"                   # mediu - schimba etichetele probelor
+    POISON_COFFEE = "POISON_COFFEE"                     # rapid - otraveste cafeaua tintei
+    EAVESDROP_CONVERSATION = "EAVESDROP_CONVERSATION"   # mediu - asculta o conversatie
+    UPLOAD_VIRUS = "UPLOAD_VIRUS"                       # lung - incarca un virus in server
+    DISPOSE_BODY_EVIDENCE = "DISPOSE_BODY_EVIDENCE"     # mediu - elimina probe compromitatoare
 
 
 # Durata (in secunde) de "hold" necesara pentru fiecare tip de task - folosita de
@@ -52,6 +66,20 @@ SPY_TASK_DURATIONS_SECONDS: dict[str, float] = {
     SpyTaskType.HACK_SURVEILLANCE_CAMERA.value: 10.0,
     SpyTaskType.SEND_ENCRYPTED_MESSAGE.value: 5.0,
     SpyTaskType.ERASE_FORENSIC_EVIDENCE.value: 8.0,
+    SpyTaskType.BUG_PHONE_LINE.value: 5.0,
+    SpyTaskType.COPY_KEYCARD.value: 3.0,
+    SpyTaskType.BRIBE_GUARD.value: 4.0,
+    SpyTaskType.SABOTAGE_ALARM.value: 6.0,
+    SpyTaskType.SMUGGLE_WEAPON.value: 9.0,
+    SpyTaskType.DECODE_INTERCEPT.value: 6.0,
+    SpyTaskType.FORGE_SIGNATURE.value: 3.0,
+    SpyTaskType.SEARCH_FILES.value: 5.0,
+    SpyTaskType.TAMPER_DNA_SAMPLE.value: 8.0,
+    SpyTaskType.SWAP_DNA_LABEL.value: 5.0,
+    SpyTaskType.POISON_COFFEE.value: 3.0,
+    SpyTaskType.EAVESDROP_CONVERSATION.value: 5.0,
+    SpyTaskType.UPLOAD_VIRUS.value: 9.0,
+    SpyTaskType.DISPOSE_BODY_EVIDENCE.value: 6.0,
 }
 
 # In ce camere (dupa RoomFunction) poate aparea fiecare tip de task. HACK_SURVEILLANCE_CAMERA
@@ -66,7 +94,22 @@ SPY_TASK_ALLOWED_FUNCTIONS: dict[str, list] = {
     ],
     SpyTaskType.SEND_ENCRYPTED_MESSAGE.value: [RoomFunction.SERVER_ROOM, RoomFunction.COMMS_MONITOR],
     SpyTaskType.ERASE_FORENSIC_EVIDENCE.value: [RoomFunction.FORENSICS_LAB],
+    SpyTaskType.BUG_PHONE_LINE.value: [RoomFunction.COMMS_MONITOR],
+    SpyTaskType.COPY_KEYCARD.value: [RoomFunction.ENTRANCE],
+    SpyTaskType.BRIBE_GUARD.value: [RoomFunction.ENTRANCE],
+    SpyTaskType.SABOTAGE_ALARM.value: [RoomFunction.ARMORY],
+    SpyTaskType.SMUGGLE_WEAPON.value: [RoomFunction.ARMORY],
+    SpyTaskType.DECODE_INTERCEPT.value: [RoomFunction.COMMS_MONITOR],
+    SpyTaskType.FORGE_SIGNATURE.value: [RoomFunction.OFFICE],
+    SpyTaskType.SEARCH_FILES.value: [RoomFunction.OFFICE],
+    SpyTaskType.TAMPER_DNA_SAMPLE.value: [RoomFunction.DNA_ARCHIVE],
+    SpyTaskType.SWAP_DNA_LABEL.value: [RoomFunction.DNA_ARCHIVE],
+    SpyTaskType.POISON_COFFEE.value: [RoomFunction.BREAK_ROOM],
+    SpyTaskType.EAVESDROP_CONVERSATION.value: [RoomFunction.BREAK_ROOM],
+    SpyTaskType.UPLOAD_VIRUS.value: [RoomFunction.SERVER_ROOM],
+    SpyTaskType.DISPOSE_BODY_EVIDENCE.value: [RoomFunction.MORGUE],
 }
+
 
 
 @dataclass
@@ -464,9 +507,12 @@ class GameRoom:
     # jucatorul dat afara s-ar putea reconecta instant cu alt playerId).
     banned_account_ids: set[str] = field(default_factory=set)
     # Cate task-uri de spion sunt alese pentru fiecare runda - configurabil de
-    # host din setarile camerei, INAINTE ca jocul sa inceapa (2-12). Implicit 5.
+    # host din setarile camerei, INAINTE ca jocul sa inceapa (2-20). Implicit 5.
     spy_task_count: int = 5
     spy_tasks: list[SpyTaskInstance] = field(default_factory=list)
+    # Cate task-uri FBI primeste FIECARE agent FBI in parte - configurabil de
+    # host din setarile camerei, INAINTE ca jocul sa inceapa (1-10). Implicit 3.
+    fbi_task_count: int = 3
     # Cele doua sloturi ale "masinii de comparare ADN" din laboratorul
     # criminalistic: id-ul mostrei recoltate (de pe un corp) si id-ul mostrei
     # de referinta (din arhiva), daca sunt puse. Un singur slot din fiecare
