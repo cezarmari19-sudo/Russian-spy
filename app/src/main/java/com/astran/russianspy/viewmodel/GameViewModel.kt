@@ -137,7 +137,7 @@ class GameViewModel : ViewModel() {
     }
 
     // Cate task-uri va primi spionul in urmatoarea runda (setare de host, in LOBBY,
-    // 2-12). Implicit 5. Actualizata local optimist si confirmata de server prin
+    // 2-20). Implicit 5. Actualizata local optimist si confirmata de server prin
     // spy_task_count_changed (care se trimite catre toata camera, ca toti sa vada
     // aceeasi valoare in ecranul de setari).
     private val _spyTaskCount = mutableStateOf(5)
@@ -145,6 +145,16 @@ class GameViewModel : ViewModel() {
 
     fun setSpyTaskCount(count: Int) {
         networkClient?.sendSetSpyTaskCount(count)
+    }
+
+    // Cate task-uri va primi FIECARE agent FBI in urmatoarea runda (setare de
+    // host, in LOBBY, 1-10). Implicit 3. Aceeasi mecanica optimista ca la
+    // spyTaskCount, confirmata prin fbi_task_count_changed.
+    private val _fbiTaskCount = mutableStateOf(3)
+    val fbiTaskCount: State<Int> = _fbiTaskCount
+
+    fun setFbiTaskCount(count: Int) {
+        networkClient?.sendSetFbiTaskCount(count)
     }
 
     // Task-urile alocate SPIONULUI in runda curenta - gol daca esti agent FBI (nu
@@ -383,6 +393,7 @@ class GameViewModel : ViewModel() {
         _removalReason.value = null
         _roomIsPrivate.value = false
         _spyTaskCount.value = 5
+        _fbiTaskCount.value = 3
         _gameOverWinner.value = null
         _activeMeeting.value = null
         _meetingResult.value = null
@@ -425,6 +436,7 @@ class GameViewModel : ViewModel() {
         _localPlayerX.value = BuildingLayout.START_X
         _localPlayerY.value = BuildingLayout.START_Y
         _spyTaskCount.value = 5
+        _fbiTaskCount.value = 3
         _gameOverWinner.value = null
         _activeMeeting.value = null
         _meetingResult.value = null
@@ -646,6 +658,9 @@ class GameViewModel : ViewModel() {
             is ServerEvent.SpyTaskCountChanged -> {
                 _spyTaskCount.value = event.count
             }
+            is ServerEvent.FbiTaskCountChanged -> {
+                _fbiTaskCount.value = event.count
+            }
             is ServerEvent.SpyTaskUpdated -> {
                 val index = spyTasks.indexOfFirst { it.id == event.taskId }
                 if (index >= 0) {
@@ -795,6 +810,8 @@ class GameViewModel : ViewModel() {
                 if (event.hostId.isNotEmpty()) {
                     _isHost.value = (event.hostId == _localPlayerId.value)
                 }
+                event.spyTaskCount?.let { _spyTaskCount.value = it }
+                event.fbiTaskCount?.let { _fbiTaskCount.value = it }
             }
             is ServerEvent.YouWereKicked -> {
                 _removalReason.value = RemovalReason.KICKED
