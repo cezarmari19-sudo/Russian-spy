@@ -26,6 +26,20 @@ sealed class ServerEvent {
     object YouWereBanned : ServerEvent()
     data class FriendRoomInvite(val fromDisplayName: String, val fromFriendCode: String, val roomCode: String) : ServerEvent()
     data class SpyTasksAssigned(val tasks: List<SpyTaskInfo>) : ServerEvent()
+
+    /** Task-urile cosmetice de FBI alocate DOAR jucatorului local (nu vede
+     * task-urile altor agenti). */
+    data class FbiTasksAssigned(val tasks: List<FbiTaskInfo>) : ServerEvent()
+    /** Un task cosmetic de FBI a fost completat (broadcast catre toata camera,
+     * util pentru UI-ul altor agenti - ex: un indicator de progres general). */
+    data class FbiTaskUpdated(val taskId: String, val isCompleted: Boolean) : ServerEvent()
+    /** Comunicatiile (SOS Morse) s-au deblocat - toti agentii FBI vii si-au
+     * terminat task-urile cosmetice. */
+    object CommsUnlocked : ServerEvent()
+    /** Rezultatul unei incercari de trimitere SOS - doar catre cel care a
+     * incercat, privat (nu se anunta restul camerei, ca sa nu se afle daca
+     * cineva a reusit deja - cronometrul ramane invizibil). */
+    data class SosResult(val correct: Boolean) : ServerEvent()
     data class SpyTaskCountChanged(val count: Int) : ServerEvent()
     data class SpyTaskUpdated(val taskId: String, val isCompleted: Boolean) : ServerEvent()
     data class SpyTaskWitnessed(val taskId: String) : ServerEvent()
@@ -86,6 +100,18 @@ data class SpyTaskInfo(
     val roomId: String,
     val x: Float,
     val y: Float,
+    val isCompleted: Boolean
+)
+
+/** Un task COSMETIC de agent FBI, alocat DOAR unui singur agent
+ * (assignedPlayerId) - fara efect real in joc, doar ocupatie. */
+data class FbiTaskInfo(
+    val id: String,
+    val taskType: String,
+    val roomId: String,
+    val x: Float,
+    val y: Float,
+    val assignedPlayerId: String,
     val isCompleted: Boolean
 )
 
@@ -453,6 +479,30 @@ class NetworkClient(
                 }
                 onEvent(ServerEvent.SpyTasksAssigned(list))
             }
+            "fbi_tasks_assigned" -> {
+                val arr = json.getJSONArray("tasks")
+                val list = (0 until arr.length()).map { i ->
+                    val entry = arr.getJSONObject(i)
+                    FbiTaskInfo(
+                        id = entry.getString("id"),
+                        taskType = entry.getString("taskType"),
+                        roomId = entry.getString("roomId"),
+                        x = entry.getDouble("x").toFloat(),
+                        y = entry.getDouble("y").toFloat(),
+                        assignedPlayerId = entry.getString("assignedPlayerId"),
+                        isCompleted = entry.optBoolean("isCompleted", false)
+                    )
+                }
+                onEvent(ServerEvent.FbiTasksAssigned(list))
+            }
+            "fbi_task_updated" -> onEvent(
+                ServerEvent.FbiTaskUpdated(
+                    taskId = json.getString("taskId"),
+                    isCompleted = json.getBoolean("isCompleted")
+                )
+            )
+            "comms_unlocked" -> onEvent(ServerEvent.CommsUnlocked)
+            "sos_result" -> onEvent(ServerEvent.SosResult(correct = json.getBoolean("correct")))
             "spy_task_count_changed" -> onEvent(
                 ServerEvent.SpyTaskCountChanged(count = json.getInt("count"))
             )
@@ -629,6 +679,24 @@ class NetworkClient(
         send(JSONObject().apply {
             put("action", "complete_spy_task")
             put("taskId", taskId)
+        })
+    }
+
+    /** Marcheaza un task cosmetic de FBI ca finalizat. */
+    fun sendCompleteFbiTask(taskId: String) {
+        send(JSONObject().apply {
+            put("action", "complete_fbi_task")
+            put("taskId", taskId)
+        })
+    }
+
+    /** Trimite o incercare de SOS Morse - symbols e o lista de "A"/"B"
+     * (butonul apasat, in ordine), tradusa pe server folosind
+     * comms_button_a_is_dot si comparata cu codul Morse real al SOS. */
+    fun sendAttemptSendSos(symbols: List<String>) {
+        send(JSONObject().apply {
+            put("action", "attempt_send_sos")
+            put("symbols", org.json.JSONArray(symbols))
         })
     }
 
