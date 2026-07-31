@@ -35,6 +35,7 @@ last_positions: dict[str, dict[str, dict]] = {}
 # oricum, report_corpse blocheaza un al doilea meeting cat unul e activ, dar
 # ramane o plasa de siguranta ieftina).
 _meeting_watchers: set[str] = set()
+_sos_watchers: set[str] = set()
 
 
 @app.get("/")
@@ -129,6 +130,30 @@ async def _meeting_watcher(room_code: str):
         await _resolve_and_broadcast_meeting(room_code)
     finally:
         _meeting_watchers.discard(room_code)
+
+
+async def _sos_watcher(room_code: str):
+    """Task de fundal pornit la primul SOS trimis cu succes: asteapta pana
+    expira SOS_CIA_ARRIVAL_SECONDS (2 minute, INVIZIBIL pentru toti jucatorii
+    pana atunci), apoi declara victoria FBI automat ("CIA captureaza spionul"),
+    indiferent ce se mai intampla in joc intre timp (alte omoruri, meetinguri
+    etc - odata SOS-ul trimis cu succes, victoria FBI e garantata dupa 2 minute).
+    O singura instanta ruleaza per camera odata."""
+    try:
+        while True:
+            room = game_manager.get_room(room_code)
+            if room is None or room.phase != GamePhase.IN_PROGRESS:
+                return
+            if game_manager.is_sos_timer_expired(room_code):
+                break
+            await asyncio.sleep(1.0)
+
+        room = game_manager.get_room(room_code)
+        if room is not None and room.phase == GamePhase.IN_PROGRESS:
+            room.phase = GamePhase.FBI_WON
+            await broadcast_to_room(room_code, {"type": "game_over", "winner": "FBI_AGENT"})
+    finally:
+        _sos_watchers.discard(room_code)
 
 
 @app.websocket("/ws/account/{account_id}")
@@ -314,6 +339,19 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                                     "type": "spy_tasks_assigned",
                                     "tasks": [t.to_dict() for t in room.spy_tasks]
                                 }))
+                            # Task-urile cosmetice de FBI se trimit DOAR agentului
+                            # caruia ii sunt alocate - fiecare agent are propriul
+                            # set individual (spre deosebire de task-urile de
+                            # spion, care sunt comune).
+                            if player.role.value == "FBI_AGENT":
+                                my_fbi_tasks = [
+                                    t.to_dict() for t in room.fbi_tasks
+                                    if t.assigned_player_id == pid
+                                ]
+                                await ws.send_text(json.dumps({
+                                    "type": "fbi_tasks_assigned",
+                                    "tasks": my_fbi_tasks
+                                }))
                     # Camerele de supraveghere ale rundei (aceleasi pentru toti jucatorii),
                     # trimise imediat dupa game_started catre toata camera.
                     await broadcast_to_room(room_code, {
@@ -418,6 +456,49 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         if action == "complete_spy_task" and game_manager.check_spy_win(room_code):
                             room.phase = GamePhase.SPY_WON
                             await broadcast_to_room(room_code, {"type": "game_over", "winner": "RUSSIAN_SPY"})
+
+            elif action == "complete_fbi_task":
+                task_id = data.get("taskId", "")
+                error = game_manager.complete_fbi_task(room_code, player_id, task_id)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    room = game_manager.get_room(room_code)
+                    await broadcast_to_room(room_code, {
+                        "type": "fbi_task_updated",
+                        "taskId": task_id,
+                        "isCompleted": True
+                    })
+                    # Daca aceasta completare a deblocat Comunicatiile (ultimul
+                    # task ramas), anuntam toata camera - clientii FBI trebuie
+                    # sa vada aparand butonul/task-ul de Comunicatii imediat.
+                    if room is not None and room.comms_unlocked:
+                        await broadcast_to_room(room_code, {"type": "comms_unlocked"})
+
+            elif action == "attempt_send_sos":
+                symbols = data.get("symbols", [])
+                room = game_manager.get_room(room_code)
+                was_already_sent = room.sos_sent_at_millis != 0.0 if room else False
+                error, is_correct = game_manager.attempt_send_sos(room_code, player_id, symbols)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    await websocket.send_text(json.dumps({
+                        "type": "sos_result",
+                        "correct": is_correct
+                    }))
+                    # Pornim watcher-ul DOAR la primul SOS reusit din runda
+                    # (was_already_sent era False inainte de apel, iar acum
+                    # room.sos_sent_at_millis a fost setat) - trimiteri
+                    # ulterioare nu mai pornesc un al doilea watcher.
+                    if is_correct and not was_already_sent and room_code not in _sos_watchers:
+                        _sos_watchers.add(room_code)
+                        asyncio.create_task(_sos_watcher(room_code))
+                    # Nu anuntam restul camerei daca a fost corect sau nu -
+                    # cronometrul de 2 minute ramane INVIZIBIL pentru toti
+                    # (cerut explicit), inclusiv pentru cel care a trimis SOS.
+                    # Victoria FBI se declara automat, mai tarziu, de catre
+                    # _sos_watcher de mai sus.
 
             elif action == "kill_player":
                 target_player_id = data.get("targetPlayerId", "")
