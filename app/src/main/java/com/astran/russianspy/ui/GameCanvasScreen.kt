@@ -375,8 +375,16 @@ fun GameCanvasScreen(
                 }
             }
 
+            // Cercul propriu foloseste culoarea REALA atribuita de server
+            // (aceeasi sursa ca la ceilalti jucatori), nu mai e galben fix.
+            val myColor = viewModel.lobbyPlayers
+                .firstOrNull { it.id == viewModel.localPlayerId.value }
+                ?.color
+                ?.let {
+                    try { Color(android.graphics.Color.parseColor(it)) } catch (e: Exception) { Color(0xFFFFD700) }
+                } ?: Color(0xFFFFD700)
             drawCircle(
-                color = Color(0xFFFFD700),
+                color = myColor,
                 radius = playerRadius * TILE_SCALE,
                 center = Offset(screenCenterX, screenCenterY)
             )
