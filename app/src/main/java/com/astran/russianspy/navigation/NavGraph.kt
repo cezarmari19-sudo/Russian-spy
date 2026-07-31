@@ -48,6 +48,7 @@ import com.astran.russianspy.ui.theme.TacticalColors
 import com.astran.russianspy.ui.FindLobbyScreen
 import com.astran.russianspy.ui.FriendsScreen
 import com.astran.russianspy.ui.GameCanvasScreen
+import com.astran.russianspy.ui.CommunicationsScreen
 import com.astran.russianspy.ui.LobbyScreen
 import com.astran.russianspy.ui.MainMenuScreen
 import com.astran.russianspy.ui.PublicLobbiesScreen
@@ -176,6 +177,9 @@ fun RussianSpyNavGraph() {
                     onOpenSurveillanceMonitors = {
                         navController.navigate(Routes.SURVEILLANCE_MONITORS)
                     },
+                    onOpenCommunications = {
+                        navController.navigate(Routes.COMMUNICATIONS)
+                    },
                     onLeaveGame = {
                         // Curatam TOT stack-ul de navigare pana la MAIN_MENU (inclusiv
                         // GAME_MAP), ca sa nu ramana WAITING_ROOM/LOBBY vechi in spate.
@@ -183,6 +187,13 @@ fun RussianSpyNavGraph() {
                             popUpTo(Routes.MAIN_MENU) { inclusive = true }
                         }
                     }
+                )
+            }
+
+            composable(Routes.COMMUNICATIONS) {
+                CommunicationsScreen(
+                    viewModel = gameViewModel,
+                    onExit = { navController.popBackStack() }
                 )
             }
 
