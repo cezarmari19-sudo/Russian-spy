@@ -490,18 +490,40 @@ fun GameCanvasScreen(
             }
         }
 
-        // Buton generic de intrare - vizibil in oricare din cele 3 camere cu
-        // ecran dedicat (Laborator Criminalistic, Morga, Arhiva ADN), oriunde
-        // in interiorul camerei (nu necesita un punct exact, spre deosebire de
-        // monitorul de supraveghere). Nu apare in timpul unui meeting.
+        // Buton "Laborator", vizibil DOAR cand jucatorul e langa masina fizica
+        // de comparare ADN din Laborator Criminalistic (nu oriunde in camera -
+        // la fel ca la monitorul de supraveghere).
+        val (labMachineX, labMachineY) = viewModel.labMachinePos.value
+        val distToLabMachine = kotlin.math.hypot(playerX - labMachineX, playerY - labMachineY)
+        val isNearLabMachine = distToLabMachine <= BuildingLayout.MONITOR_INTERACT_RADIUS
+        if (isNearLabMachine && viewModel.activeMeeting.value == null) {
+            val forensicsRoom = BuildingLayout.getRoomById("forensics")
+            if (forensicsRoom != null) {
+                Button(
+                    onClick = { onEnterTask(forensicsRoom) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C)),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(24.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                ) {
+                    Text("🔬 Laborator")
+                }
+            }
+        }
+
+        // Buton generic de intrare - vizibil in Morga si Arhiva ADN, oriunde in
+        // interiorul camerei (nu necesita un punct exact). Laboratorul
+        // Criminalistic NU mai e aici - are propriul buton de proximitate mai
+        // sus, legat de pozitia fizica a masinii de comparare ADN. Nu apare in
+        // timpul unui meeting.
         val currentRoom = BuildingLayout.getRoomById(currentRoomIdLocal)
         if (currentRoom != null && viewModel.activeMeeting.value == null &&
             currentRoom.function in listOf(
-                RoomFunction.FORENSICS_LAB, RoomFunction.MORGUE, RoomFunction.DNA_ARCHIVE
+                RoomFunction.MORGUE, RoomFunction.DNA_ARCHIVE
             )
         ) {
             val label = when (currentRoom.function) {
-                RoomFunction.FORENSICS_LAB -> "🔬 Laborator"
                 RoomFunction.MORGUE -> "⚰️ Morga"
                 RoomFunction.DNA_ARCHIVE -> "🧬 Arhiva ADN"
                 else -> "Intra"
