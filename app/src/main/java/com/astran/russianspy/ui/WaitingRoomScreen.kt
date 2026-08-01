@@ -968,9 +968,11 @@ private fun LobbySettingsDialog(viewModel: GameViewModel, onDismiss: () -> Unit)
                     color = TacticalColors.TextSecondary,
                     fontSize = 12.sp
                 )
+                var spySliderPos by remember(spyTaskCount) { mutableStateOf(spyTaskCount.toFloat()) }
                 Slider(
-                    value = spyTaskCount.toFloat(),
-                    onValueChange = { viewModel.setSpyTaskCount(it.toInt()) },
+                    value = spySliderPos,
+                    onValueChange = { spySliderPos = it },
+                    onValueChangeFinished = { viewModel.setSpyTaskCount(spySliderPos.toInt()) },
                     valueRange = 2f..20f,
                     steps = 17,
                     colors = SliderDefaults.colors(
@@ -992,9 +994,11 @@ private fun LobbySettingsDialog(viewModel: GameViewModel, onDismiss: () -> Unit)
                     color = TacticalColors.TextSecondary,
                     fontSize = 12.sp
                 )
+                var fbiSliderPos by remember(fbiTaskCount) { mutableStateOf(fbiTaskCount.toFloat()) }
                 Slider(
-                    value = fbiTaskCount.toFloat(),
-                    onValueChange = { viewModel.setFbiTaskCount(it.toInt()) },
+                    value = fbiSliderPos,
+                    onValueChange = { fbiSliderPos = it },
+                    onValueChangeFinished = { viewModel.setFbiTaskCount(fbiSliderPos.toInt()) },
                     valueRange = 1f..20f,
                     steps = 18,
                     colors = SliderDefaults.colors(
