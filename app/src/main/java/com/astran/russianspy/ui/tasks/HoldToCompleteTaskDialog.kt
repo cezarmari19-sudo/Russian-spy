@@ -107,6 +107,21 @@ fun HoldToCompleteTaskDialog(
                 "INSPECT_BADGE_SCANNER" -> InspectBadgeScannerMinigame(durationSeconds, accentColor, wrappedOnComplete)
                 "CALIBRATE_METAL_DETECTOR" -> CalibrateMetalDetectorMinigame(durationSeconds, accentColor, wrappedOnComplete)
                 "REVIEW_PERSONNEL_FILES" -> ReviewPersonnelFilesMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "DUST_FOR_PRINTS" -> DustForPrintsMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "INTERVIEW_WITNESS" -> InterviewWitnessMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "LOG_EVIDENCE_CHAIN" -> LogEvidenceChainMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "PATROL_CAMERA_FEED" -> PatrolCameraFeedMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "RUN_BACKGROUND_CHECK" -> RunBackgroundCheckMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "SWEEP_FOR_BUGS" -> SweepForBugsMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "VERIFY_ID_DOCUMENTS" -> VerifyIdDocumentsMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "RESTOCK_AMMO" -> RestockAmmoMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "SIGN_OUT_WEAPON" -> SignOutWeaponMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "CATALOG_DNA_SAMPLE" -> CatalogDnaSampleMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "CROSS_REFERENCE_RECORDS" -> CrossReferenceRecordsMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "BRIEF_THE_TEAM" -> BriefTheTeamMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "SECURE_PERIMETER" -> SecurePerimeterMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "IDENTIFY_REMAINS" -> IdentifyRemainsMinigame(durationSeconds, accentColor, wrappedOnComplete)
+                "REFILL_COFFEE_MACHINE" -> RefillCoffeeMachineMinigame(durationSeconds, accentColor, wrappedOnComplete)
                 "BUG_PHONE_LINE" -> BugPhoneLineMinigame(durationSeconds, accentColor, wrappedOnComplete)
                 "COPY_KEYCARD" -> CopyKeycardMinigame(durationSeconds, accentColor, wrappedOnComplete)
                 "BRIBE_GUARD" -> BribeGuardMinigame(durationSeconds, accentColor, wrappedOnComplete)
@@ -2491,47 +2506,3 @@ private fun DisposeBodyEvidenceMinigame(
     }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = "Trage fiecare obiect in zona corecta",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 13.sp
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.85f)
-                .height(200.dp)
-        ) {
-            // Zonele tinta, in colturi
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .size(70.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(alpha = 0.08f))
-                    .border(1.dp, NEON_GREEN.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(70.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White.copy(alpha = 0.08f))
-                    .border(1.dp, NEON_GREEN.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-            )
-
-            // Obiectele de mutat, initial in centru, imprastiate
-            val startOffsets = remember {
-                (0 until itemCount).map {
-                    Offset(
-                        Random.nextFloat() * 120f + 60f,
-                        Random.nextFloat() * 60f + 70f
-                    )
-                }
-            }
-            (0 until itemCount).forEach { idx ->
-                if (!placed[idx]) {
-                    val base = startOffsets[idx]
-                    val liveOffset = if (draggingIndex == idx) dragOffset else Offset.Zero
-                    
