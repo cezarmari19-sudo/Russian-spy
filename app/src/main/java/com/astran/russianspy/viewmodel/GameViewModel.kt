@@ -502,6 +502,12 @@ class GameViewModel : ViewModel() {
     // acest eveniment, se genereaza local ca fallback, ca ecranul de camere sa functioneze.
     val surveillanceCameraSpots = mutableStateListOf<SurveillanceCameraSpot>()
 
+    // Pozitia fixa a masinii de comparare ADN din Laborator Criminalistic
+    // pentru runda curenta - primita de la server, aceeasi pentru toti.
+    // Implicit (0f, 0f) = inca nesetata (inainte de start_game).
+    private val _labMachinePos = mutableStateOf(Pair(0f, 0f))
+    val labMachinePos: State<Pair<Float, Float>> = _labMachinePos
+
     /** Genereaza local 4 camere random: camera hartii aleasa random + punct random in interiorul ei. */
     fun generateRandomCameraSpotsLocally() {
         if (surveillanceCameraSpots.isNotEmpty()) return // deja generate pentru runda asta
@@ -878,6 +884,9 @@ class GameViewModel : ViewModel() {
                 event.spots.forEach { spot ->
                     surveillanceCameraSpots.add(SurveillanceCameraSpot(spot.roomId, spot.x, spot.y))
                 }
+            }
+            is ServerEvent.LabMachinePositionAssigned -> {
+                _labMachinePos.value = Pair(event.x, event.y)
             }
             is ServerEvent.PlayerMoved -> {
                 val state = _gameState.value ?: return
