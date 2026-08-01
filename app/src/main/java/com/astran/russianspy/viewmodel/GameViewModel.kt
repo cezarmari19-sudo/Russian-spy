@@ -461,6 +461,34 @@ class GameViewModel : ViewModel() {
         _killCooldownUntilMillis.value = 0L
     }
 
+    /**
+     * Apelata cand aplicatia trece COMPLET in fundal (ProcessLifecycleOwner
+     * ON_STOP - utilizatorul a minimizat aplicatia sau a deschis alta app),
+     * NU la simpla schimbare de ecran in interiorul jocului. Inchide
+     * WebSocket-ul (la fel ca o pierdere reala de retea), ca serverul sa
+     * marcheze jucatorul deconectat imediat - la fel ca in Among Us, nu dupa
+     * un timeout lung sau deloc. NU reseteaza state-ul local (rol, pozitie,
+     * task-uri), ca la revenire in aplicatie sa putem reconecta si continua
+     * exact de unde am ramas, daca serverul inca ne accepta inapoi.
+     */
+    fun disconnectDueToBackground() {
+        networkClient?.disconnect()
+    }
+
+    /**
+     * Apelata cand aplicatia revine in prim-plan (ProcessLifecycleOwner
+     * ON_START) dupa ce a fost minimizata in timpul unei camere active.
+     * Redeschide WebSocket-ul pe ACELASI NetworkClient si cu acelasi
+     * roomCode/playerId, ca serverul sa ne recunoasca drept reconectare (nu
+     * jucator nou) - fara efect daca nu exista nicio camera activa.
+     */
+    fun reconnectAfterForeground() {
+        val roomCode = _gameState.value?.roomCode ?: return
+        val playerId = _localPlayerId.value
+        if (playerId.isEmpty()) return
+        networkClient?.connectWebSocket(roomCode, playerId)
+    }
+
     private val _localPlayerId = mutableStateOf("")
     val localPlayerId: State<String> = _localPlayerId
 
