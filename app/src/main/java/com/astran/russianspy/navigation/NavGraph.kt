@@ -24,11 +24,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +40,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -68,6 +73,27 @@ fun RussianSpyNavGraph() {
     val gameViewModel: GameViewModel = viewModel()
     val context = LocalContext.current
     var removalToastMessage by remember { mutableStateOf<String?>(null) }
+
+    // Observam lifecycle-ul PROCESULUI intreg (nu al unei Activity/ecran) -
+    // ON_STOP se declanseaza DOAR cand utilizatorul chiar paraseste
+    // aplicatia (minimizare, alta app), NU la simpla navigare intre ecrane
+    // in interiorul jocului nostru. La fel ca in Among Us: daca pleci din
+    // aplicatie in timpul unei runde, esti deconectat imediat, nu ramai
+    // "fantoma" care poate continua sa joace din fundal.
+    val currentGameViewModel by rememberUpdatedState(gameViewModel)
+    DisposableEffect(Unit) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> currentGameViewModel.disconnectDueToBackground()
+                Lifecycle.Event.ON_START -> currentGameViewModel.reconnectAfterForeground()
+                else -> {}
+            }
+        }
+        ProcessLifecycleOwner.get().lifecycle.addObserver(observer)
+        onDispose {
+            ProcessLifecycleOwner.get().lifecycle.removeObserver(observer)
+        }
+    }
 
     // Pornim conexiunea GLOBALA de prezenta (pentru invitatii de prieteni) o
     // singura data, la lansarea aplicatiei - ramane activa in tot navigatia,
