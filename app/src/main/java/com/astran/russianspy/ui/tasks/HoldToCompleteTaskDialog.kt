@@ -788,12 +788,15 @@ private fun CheckEvidenceLockerMinigame(
     onComplete: () -> Unit
 ) {
     val boxCount = 6
-    val sealedFlags = remember { List(boxCount) { Random.nextBoolean() }.let { flags ->
-        // garanteaza cel putin 2 sigilate si 2 rupte, ca sa fie interesant
-        if (flags.count { it } < 2 || flags.count { !it } < 2) {
-            (0 until boxCount).map { it % 2 == 0 }.shuffled(Random(System.nanoTime()))
-        } else flags
-    } }
+    val sealedFlags = remember {
+        var flags = List(boxCount) { Random.nextBoolean() }
+        val goodOnes = flags.count { it }
+        val badOnes = flags.count { !it }
+        if (goodOnes < 2 || badOnes < 2) {
+            flags = (0 until boxCount).map { it % 2 == 0 }.shuffled()
+        }
+        flags
+    }
     var checked by remember { mutableStateOf(List(boxCount) { false }) }
     var wrongFlash by remember { mutableStateOf(false) }
 
@@ -1260,22 +1263,15 @@ private fun BugPhoneLineMinigame(
     accentColor: Color,
     onComplete: () -> Unit
 ) {
-    var sliderPos by remember { mutableStateOf(0f) } // 0..1
-    var heldMs by remember { mutableStateOf(0f) }
-    val targetCenter = remember { 0.25f + Random.nextFloat() * 0.5f }
-    val targetHalfWidth = 0.06f
-    val neededMs = 900f
+    val totalSteps = 5
+    val targetStep = remember { Random.nextInt(0, totalSteps) }
+    var currentStep by remember { mutableStateOf(totalSteps / 2) }
+    var wrongFlash by remember { mutableStateOf(false) }
 
-    val inZone = abs(sliderPos - targetCenter) < targetHalfWidth
-
-    LaunchedEffect(inZone) {
-        while (inZone) {
-            delay(50)
-            heldMs += 50f
-            if (heldMs >= neededMs) {
-                onComplete()
-                break
-            }
+    LaunchedEffect(currentStep) {
+        if (currentStep == targetStep) {
+            delay(400)
+            onComplete()
         }
     }
 
@@ -1287,53 +1283,59 @@ private fun BugPhoneLineMinigame(
         )
         Spacer(modifier = Modifier.height(20.dp))
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.85f)
-                .height(50.dp)
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val w = size.width
-                val h = size.height
-                drawRoundRect(
-                    color = Color.White.copy(alpha = 0.08f),
-                    cornerRadius = CornerRadius(8.dp.toPx())
-                )
-                val zoneStart = (targetCenter - targetHalfWidth) * w
-                val zoneWidth = targetHalfWidth * 2f * w
-                drawRoundRect(
-                    color = NEON_GREEN.copy(alpha = 0.35f),
-                    topLeft = Offset(zoneStart, 0f),
-                    size = Size(zoneWidth, h),
-                    cornerRadius = CornerRadius(4.dp.toPx())
-                )
-                val needleX = sliderPos * w
-                drawLine(
-                    color = if (inZone) NEON_GREEN else accentColor,
-                    start = Offset(needleX, 0f),
-                    end = Offset(needleX, h),
-                    strokeWidth = 4.dp.toPx()
-                )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (step in 0 until totalSteps) {
+                val isCurrent = step == currentStep
+                val isGood = step == targetStep && isCurrent
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (isGood) NEON_GREEN.copy(alpha = 0.4f)
+                            else if (isCurrent) accentColor.copy(alpha = 0.5f)
+                            else Color.White.copy(alpha = 0.08f)
+                        )
+                        .border(1.dp, accentColor.copy(alpha = 0.4f), RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "${step + 1}", color = Color.White, fontSize = 14.sp)
+                }
             }
         }
 
-        Slider(
-            value = sliderPos,
-            onValueChange = { sliderPos = it },
-            valueRange = 0f..1f,
-            colors = SliderDefaults.colors(
-                thumbColor = accentColor,
-                activeTrackColor = accentColor
-            ),
-            modifier = Modifier.fillMaxWidth(0.85f)
-        )
+        Spacer(modifier = Modifier.height(20.dp))
 
-        Spacer(modifier = Modifier.height(6.dp))
-        LinearProgressIndicator(
-            progress = { (heldMs / neededMs).coerceIn(0f, 1f) },
-            modifier = Modifier.fillMaxWidth(0.6f),
-            color = NEON_GREEN,
-            trackColor = Color.White.copy(alpha = 0.15f)
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .clip(RoundedCornerShape(27.dp))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .border(1.dp, accentColor, RoundedCornerShape(27.dp))
+                    .clickable(enabled = currentStep > 0) { currentStep -= 1 },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("-", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            }
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .clip(RoundedCornerShape(27.dp))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .border(1.dp, accentColor, RoundedCornerShape(27.dp))
+                    .clickable(enabled = currentStep < totalSteps - 1) { currentStep += 1 },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("+", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = if (wrongFlash) "Semnal instabil" else "Gaseste frecventa corecta",
+            color = if (wrongFlash) NEON_RED else Color.White.copy(alpha = 0.5f),
+            fontSize = 12.sp
         )
     }
 }
@@ -1888,24 +1890,25 @@ private fun ForgeSignatureMinigame(
                                 progress = 0f
                             }
                         },
-                        onDragCancel = { progress = 0f }
-                    ) { change, _ ->
-                        change.consume()
-                        val w = canvasSize.width
-                        val h = canvasSize.height
-                        if (w > 1f) {
-                            val t = (change.position.x / w).coerceIn(0f, 1f)
-                            val guide = guidePoint(t, w, h)
-                            val dist = (change.position - guide).getDistance()
-                            if (dist < 28f) {
-                                offTrack = false
-                                progress = maxOf(progress, t)
-                                if (progress >= 0.97f) onComplete()
-                            } else {
-                                offTrack = true
+                        onDragCancel = { progress = 0f },
+                        onDrag = { change, _ ->
+                            change.consume()
+                            val w = canvasSize.width
+                            val h = canvasSize.height
+                            if (w > 1f) {
+                                val t = (change.position.x / w).coerceIn(0f, 1f)
+                                val guide = guidePoint(t, w, h)
+                                val dist = (change.position - guide).getDistance()
+                                if (dist < 28f) {
+                                    offTrack = false
+                                    progress = maxOf(progress, t)
+                                    if (progress >= 0.97f) onComplete()
+                                } else {
+                                    offTrack = true
+                                }
                             }
                         }
-                    }
+                    )
                 }
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -2489,19 +2492,4 @@ private fun UploadVirusMinigame(
 private fun DisposeBodyEvidenceMinigame(
     durationSeconds: Float,
     accentColor: Color,
-    onComplete: () -> Unit
-) {
-    val itemCount = 4
-    val zoneNames = listOf("Colet A", "Colet B")
-    val correctZones = remember { (0 until itemCount).map { Random.nextInt(0, 2) } }
-    var placedCount by remember { mutableStateOf(0) }
-    var placed by remember { mutableStateOf(List(itemCount) { false }) }
-    var selectedItem by remember { mutableStateOf<Int?>(null) }
-    var wrongFlash by remember { mutableStateOf(false) }
-
-    LaunchedEffect(placedCount) {
-        if (placedCount >= itemCount) {
-            delay(150)
-            onComplete()
-        }
-    }
+    onCompl
