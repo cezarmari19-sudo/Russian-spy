@@ -465,7 +465,7 @@ class GameManager:
 
     def set_fbi_task_count(self, room_code: str, requesting_player_id: str, count: int) -> Optional[str]:
         """Doar host-ul poate seta cate task-uri primeste FIECARE agent FBI
-        (1-10), si doar inainte ca jocul sa inceapa (in LOBBY)."""
+        (1-20), si doar inainte ca jocul sa inceapa (in LOBBY)."""
         room = self.rooms.get(room_code)
         if room is None:
             return "Camera nu exista"
@@ -473,8 +473,8 @@ class GameManager:
             return "Doar hostul poate schimba aceasta setare"
         if room.phase != GamePhase.LOBBY:
             return "Nu poti schimba numarul de task-uri in timpul meciului"
-        if count < 1 or count > 10:
-            return "Numarul de task-uri trebuie sa fie intre 1 si 10"
+        if count < 1 or count > 20:
+            return "Numarul de task-uri trebuie sa fie intre 1 si 20"
         room.fbi_task_count = count
         return None
 
