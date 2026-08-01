@@ -1686,8 +1686,8 @@ private fun SmuggleWeaponMinigame(
         )
     }
 
-    LaunchedEffect(isPressed) {
-        while (isPressed && !caught) {
+    LaunchedEffect(isPressed, progress, caught) {
+        if (isPressed && !caught) {
             delay(50)
             val raw = sweep.value % 1f
             val sweepFrac = if (raw < 0.5f) raw * 2f else (1f - raw) * 2f
@@ -1695,10 +1695,12 @@ private fun SmuggleWeaponMinigame(
                 caught = true
                 progress = 0f
             } else {
-                progress += 0.05f / needed
-                if (progress >= 1f) {
+                val next = progress + 0.05f / needed
+                if (next >= 1f) {
+                    progress = 1f
                     onComplete()
-                    break
+                } else {
+                    progress = next
                 }
             }
         }
@@ -2739,155 +2741,7 @@ private fun InterviewWitnessMinigame(
         }
     }
 }
-// ---------------------------------------------------------------------------
-// 26) DUST_FOR_PRINTS (~5s) - "Brush gently": tine apasat, dar nu prea tare,
-//     ca sa nu strici amprenta. Prea tare = reset.
-// ---------------------------------------------------------------------------
-@Composable
-private fun DustForPrintsMinigame(
-    durationSeconds: Float,
-    accentColor: Color,
-    onComplete: () -> Unit
-) {
-    var progress by remember { mutableStateOf(0f) }
-    var pressure by remember { mutableStateOf(0f) }
-    var smudged by remember { mutableStateOf(false) }
-    val needed = durationSeconds
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = "Perie usor amprenta - nu apasa prea tare",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 13.sp
-        )
-        Spacer(modifier = Modifier.height(18.dp))
-
-        Box(
-            modifier = Modifier
-                .size(140.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color.White.copy(alpha = 0.06f))
-                .border(1.dp, if (smudged) NEON_RED else accentColor, RoundedCornerShape(12.dp))
-                .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = { pressure = 0.3f },
-                        onDragEnd = { pressure = 0f },
-                        onDragCancel = { pressure = 0f }
-                    ) { change, dragAmount ->
-                        change.consume()
-                        val speed = abs(dragAmount.y) + abs(dragAmount.x)
-                        pressure = (speed / 8f).coerceIn(0f, 1f)
-                        if (pressure > 0.65f) {
-                            smudged = true
-                            progress = 0f
-                        } else {
-                            progress += 0.03f / needed
-                            if (progress >= 1f) onComplete()
-                        }
-                    }
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = if (smudged) "STRICATA!" else "🖐",
-                fontSize = 26.sp,
-                color = Color.White
-            )
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-        LinearProgressIndicator(
-            progress = { progress.coerceIn(0f, 1f) },
-            modifier = Modifier.fillMaxWidth(0.6f),
-            color = if (smudged) NEON_RED else NEON_GREEN,
-            trackColor = Color.White.copy(alpha = 0.15f)
-        )
-    }
-
-    LaunchedEffect(smudged) {
-        if (smudged) {
-            delay(500)
-            smudged = false
-        }
-    }
-}
-// ---------------------------------------------------------------------------
-// 27) INTERVIEW_WITNESS (~4s) - "Ask the right question": alege intrebarea
-//     potrivita, de mai multe ori la rand.
-// ---------------------------------------------------------------------------
-@Composable
-private fun InterviewWitnessMinigame(
-    durationSeconds: Float,
-    accentColor: Color,
-    onComplete: () -> Unit
-) {
-    val prompts = listOf(
-        Triple("Martorul pare nervos.", "Il linistesti si continui calm", "Il presezi mai tare"),
-        Triple("Raspunsul e vag.", "Ceri detalii concrete", "Schimbi subiectul"),
-        Triple("Martorul ezita.", "Ii dai timp sa se gandeasca", "Il grabesti")
-    )
-    var round by remember { mutableStateOf(0) }
-    var wrongFlash by remember { mutableStateOf(false) }
-
-    LaunchedEffect(round) {
-        if (round >= prompts.size) onComplete()
-    }
-    if (round >= prompts.size) return
-
-    val (situation, goodOption, badOption) = prompts[round]
-    val goodFirst = remember(round) { Random.nextBoolean() }
-
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = "Interviu martor (runda ${round + 1}/${prompts.size})",
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 13.sp
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-            text = situation,
-            color = Color.White,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(18.dp))
-
-        val options = if (goodFirst) listOf(goodOption to true, badOption to false)
-        else listOf(badOption to false, goodOption to true)
-
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            options.forEach { (label, isGood) ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.85f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color.White.copy(alpha = 0.08f))
-                        .border(1.dp, accentColor.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-                        .clickable {
-                            if (isGood) round += 1 else wrongFlash = true
-                        }
-                        .padding(horizontal = 16.dp, vertical = 14.dp)
-                ) {
-                    Text(text = label, color = Color.White, fontSize = 14.sp)
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-            text = if (wrongFlash) "Martorul se inchide - incearca alta abordare" else " ",
-            color = NEON_RED,
-            fontSize = 12.sp
-        )
-    }
-
-    LaunchedEffect(wrongFlash) {
-        if (wrongFlash) {
-            delay(450)
-            wrongFlash = false
-        }
-    }
-}
 // ---------------------------------------------------------------------------
 // 28) LOG_EVIDENCE_CHAIN (~5s) - "Fill in order": bifeaza rubricile lantului
 //     de custodie in ordine, la fel ca la raportul de incident.
@@ -2969,7 +2823,8 @@ private fun LogEvidenceChainMinigame(
             fontSize = 13.sp
         )
     }
-} 
+}
+
 // ---------------------------------------------------------------------------
 // 29) PATROL_CAMERA_FEED (~4s) - "Spot the glitch": gaseste feed-ul cu semnal
 //     anormal printre altele, de cateva ori.
@@ -3144,6 +2999,7 @@ private fun RunBackgroundCheckMinigame(
         }
     }
 }
+
 // ---------------------------------------------------------------------------
 // 31) SWEEP_FOR_BUGS (~5s) - "Find the peak": plimba senzorul (slider) pana
 //     gasesti varful de semnal, la fel ca BUG_PHONE_LINE dar cu prag mai ingust.
@@ -3447,6 +3303,7 @@ private fun SignOutWeaponMinigame(
         )
     }
 }
+
 // ---------------------------------------------------------------------------
 // 35) CATALOG_DNA_SAMPLE (~5s) - "File it right": trage proba in sertarul cu
 //     codul corect din arhiva.
@@ -3685,6 +3542,7 @@ private fun BriefTheTeamMinigame(
         }
     }
 }
+
 // ---------------------------------------------------------------------------
 // 38) SECURE_PERIMETER (~5s) - "Check each post": apasa punctele de control
 //     in ordine, fara sa ratezi vreunul.
