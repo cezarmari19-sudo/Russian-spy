@@ -191,6 +191,13 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
         active_connections[room_code] = {}
     active_connections[room_code][player_id] = websocket
 
+    # Daca jucatorul exista deja in camera (reconectare dupa ce a fost
+    # marcat disconnected=True la iesirea din aplicatie), il marcam din nou
+    # ca "connected", la fel ca la revenirea in Among Us dupa o deconectare.
+    room_for_reconnect = game_manager.get_room(room_code)
+    if room_for_reconnect is not None and player_id in room_for_reconnect.players:
+        room_for_reconnect.players[player_id].connected = True
+
     if room_code not in last_positions:
         last_positions[room_code] = {}
 
