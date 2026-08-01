@@ -216,6 +216,12 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                 "type": "surveillance_cameras_assigned",
                 "spots": room.surveillance_cameras
             }))
+        if room.lab_machine_x != 0.0 or room.lab_machine_y != 0.0:
+            await websocket.send_text(json.dumps({
+                "type": "lab_machine_position_assigned",
+                "x": room.lab_machine_x,
+                "y": room.lab_machine_y
+            }))
         # Pozitiile actuale ale tuturor jucatorilor din camera FIZICA de lobby
         # (hol de asteptare) - trimise o singura data la conectare, ca noul
         # client sa vada instant unde e fiecare, fara sa astepte prima miscare
@@ -359,6 +365,15 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                     await broadcast_to_room(room_code, {
                         "type": "surveillance_cameras_assigned",
                         "spots": room.surveillance_cameras
+                    })
+                    # Pozitia fixa a masinii de comparare ADN din Laborator
+                    # Criminalistic pentru aceasta runda - jucatorul trebuie sa
+                    # fie langa acest punct exact ca sa poata intra in ecranul
+                    # de laborator (la fel ca la monitorul de supraveghere).
+                    await broadcast_to_room(room_code, {
+                        "type": "lab_machine_position_assigned",
+                        "x": room.lab_machine_x,
+                        "y": room.lab_machine_y
                     })
                     # Arhiva de ADN e populata automat (o mostra de referinta
                     # per jucator) - trimitem lista catre toti, clientul o
