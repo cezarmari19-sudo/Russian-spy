@@ -2482,8 +2482,8 @@ private fun UploadVirusMinigame(
 }
 
 // ---------------------------------------------------------------------------
-// 25) DISPOSE_BODY_EVIDENCE (~6s) - "Move it to the right spot": trage fiecare
-//     obiect suspect in zona corecta, ca sa nu ridice suspiciuni.
+// 25) DISPOSE_BODY_EVIDENCE (~6s) - "Choose the right spot": apasa fiecare
+//     obiect suspect, apoi apasa zona corecta unde trebuie mutat.
 // ---------------------------------------------------------------------------
 @Composable
 private fun DisposeBodyEvidenceMinigame(
@@ -2492,10 +2492,11 @@ private fun DisposeBodyEvidenceMinigame(
     onComplete: () -> Unit
 ) {
     val itemCount = 4
+    val zoneNames = listOf("Colet A", "Colet B")
+    val correctZones = remember { (0 until itemCount).map { Random.nextInt(0, 2) } }
     var placedCount by remember { mutableStateOf(0) }
     var placed by remember { mutableStateOf(List(itemCount) { false }) }
-    var draggingIndex by remember { mutableStateOf<Int?>(null) }
-    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    var selectedItem by remember { mutableStateOf<Int?>(null) }
     var wrongFlash by remember { mutableStateOf(false) }
 
     LaunchedEffect(placedCount) {
@@ -2504,5 +2505,3 @@ private fun DisposeBodyEvidenceMinigame(
             onComplete()
         }
     }
-
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
