@@ -2244,17 +2244,19 @@ private fun PoisonCoffeeMinigame(
         }
     }
 
-    LaunchedEffect(isPressed) {
-        while (isPressed && !caught) {
+    LaunchedEffect(isPressed, progress, lookingAway) {
+        if (isPressed && !caught) {
             delay(50)
             if (!lookingAway) {
                 caught = true
                 progress = 0f
             } else {
-                progress += 0.05f / needed
-                if (progress >= 1f) {
+                val next = progress + 0.05f / needed
+                if (next >= 1f) {
+                    progress = 1f
                     onComplete()
-                    break
+                } else {
+                    progress = next
                 }
             }
         }
@@ -2421,18 +2423,19 @@ private fun UploadVirusMinigame(
     var isPressed by remember { mutableStateOf(false) }
     val needed = durationSeconds
 
-    LaunchedEffect(isPressed) {
-        while (true) {
+    LaunchedEffect(isPressed, progress) {
+        if (isPressed) {
             delay(50)
-            if (isPressed) {
-                progress += 0.05f / needed
-                if (progress >= 1f) {
-                    onComplete()
-                    break
-                }
+            val next = progress + 0.05f / needed
+            if (next >= 1f) {
+                progress = 1f
+                onComplete()
             } else {
-                progress = (progress - 0.05f / needed * 1.5f).coerceAtLeast(0f)
+                progress = next
             }
+        } else if (progress > 0f) {
+            delay(50)
+            progress = (progress - 0.075f / needed).coerceAtLeast(0f)
         }
     }
 
@@ -2487,9 +2490,4 @@ private fun UploadVirusMinigame(
 // ---------------------------------------------------------------------------
 // 25) DISPOSE_BODY_EVIDENCE (~6s) - "Choose the right spot": apasa fiecare
 //     obiect suspect, apoi apasa zona corecta unde trebuie mutat.
-// ---------------------------------------------------------------------------
-@Composable
-private fun DisposeBodyEvidenceMinigame(
-    durationSeconds: Float,
-    accentColor: Color,
-    onCompl
+// ------------------------------------------------------
