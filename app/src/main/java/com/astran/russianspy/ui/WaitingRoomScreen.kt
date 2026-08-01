@@ -995,8 +995,8 @@ private fun LobbySettingsDialog(viewModel: GameViewModel, onDismiss: () -> Unit)
                 Slider(
                     value = fbiTaskCount.toFloat(),
                     onValueChange = { viewModel.setFbiTaskCount(it.toInt()) },
-                    valueRange = 1f..10f,
-                    steps = 8,
+                    valueRange = 1f..20f,
+                    steps = 18,
                     colors = SliderDefaults.colors(
                         thumbColor = TacticalColors.Accent,
                         activeTrackColor = TacticalColors.Accent
