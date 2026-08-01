@@ -19,6 +19,7 @@ sealed class ServerEvent {
     data class GameStarted(val yourRole: String) : ServerEvent()
     data class SurveillanceEvent(val eventType: String, val fromRoomId: String) : ServerEvent()
     data class SurveillanceCamerasAssigned(val spots: List<CameraSpotInfo>) : ServerEvent()
+    data class LabMachinePositionAssigned(val x: Float, val y: Float) : ServerEvent()
     data class PlayerDisconnected(val playerId: String) : ServerEvent()
     data class LobbyUpdate(
         val players: List<LobbyPlayerInfo>,
@@ -441,6 +442,14 @@ class NetworkClient(
                     )
                 }
                 onEvent(ServerEvent.SurveillanceCamerasAssigned(list))
+            }
+            "lab_machine_position_assigned" -> {
+                onEvent(
+                    ServerEvent.LabMachinePositionAssigned(
+                        x = json.getDouble("x").toFloat(),
+                        y = json.getDouble("y").toFloat()
+                    )
+                )
             }
             "player_disconnected" -> onEvent(
                 ServerEvent.PlayerDisconnected(playerId = json.getString("playerId"))
