@@ -416,12 +416,15 @@ class GameManager:
         room.corpses = {}
         room.lab_machine_harvested_sample_id = None
         room.lab_machine_reference_sample_id = None
+        # Pozitia masinii de comparare ADN e FIXA (nu random), in coltul
+        # stanga-sus al camerei Laborator Criminalistic, cu o mica marja fata
+        # de pereti ca sa nu fie lipita de colt.
         forensics_room = next((r for r in BUILDING_LAYOUT if r.function == RoomFunction.FORENSICS_LAB), None)
         if forensics_room is not None:
             margin_x = forensics_room.width * 0.15
             margin_y = forensics_room.height * 0.15
-            room.lab_machine_x = forensics_room.x + margin_x + random.random() * (forensics_room.width - margin_x * 2)
-            room.lab_machine_y = forensics_room.y + margin_y + random.random() * (forensics_room.height - margin_y * 2)
+            room.lab_machine_x = forensics_room.x + margin_x
+            room.lab_machine_y = forensics_room.y + margin_y
         return None
 
     def _generate_dna_archive(self, room: GameRoom):
