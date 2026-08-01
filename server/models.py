@@ -422,6 +422,21 @@ class FbiTaskType(str, Enum):
     INSPECT_BADGE_SCANNER = "INSPECT_BADGE_SCANNER"
     CALIBRATE_METAL_DETECTOR = "CALIBRATE_METAL_DETECTOR"
     REVIEW_PERSONNEL_FILES = "REVIEW_PERSONNEL_FILES"
+    DUST_FOR_PRINTS = "DUST_FOR_PRINTS"
+    INTERVIEW_WITNESS = "INTERVIEW_WITNESS"
+    LOG_EVIDENCE_CHAIN = "LOG_EVIDENCE_CHAIN"
+    PATROL_CAMERA_FEED = "PATROL_CAMERA_FEED"
+    RUN_BACKGROUND_CHECK = "RUN_BACKGROUND_CHECK"
+    SWEEP_FOR_BUGS = "SWEEP_FOR_BUGS"
+    VERIFY_ID_DOCUMENTS = "VERIFY_ID_DOCUMENTS"
+    RESTOCK_AMMO = "RESTOCK_AMMO"
+    SIGN_OUT_WEAPON = "SIGN_OUT_WEAPON"
+    CATALOG_DNA_SAMPLE = "CATALOG_DNA_SAMPLE"
+    CROSS_REFERENCE_RECORDS = "CROSS_REFERENCE_RECORDS"
+    BRIEF_THE_TEAM = "BRIEF_THE_TEAM"
+    SECURE_PERIMETER = "SECURE_PERIMETER"
+    IDENTIFY_REMAINS = "IDENTIFY_REMAINS"
+    REFILL_COFFEE_MACHINE = "REFILL_COFFEE_MACHINE"
 
 
 FBI_TASK_DURATIONS_SECONDS: dict[str, float] = {
@@ -430,6 +445,21 @@ FBI_TASK_DURATIONS_SECONDS: dict[str, float] = {
     FbiTaskType.INSPECT_BADGE_SCANNER.value: 2.0,
     FbiTaskType.CALIBRATE_METAL_DETECTOR.value: 6.0,
     FbiTaskType.REVIEW_PERSONNEL_FILES.value: 4.0,
+    FbiTaskType.DUST_FOR_PRINTS.value: 5.0,
+    FbiTaskType.INTERVIEW_WITNESS.value: 4.0,
+    FbiTaskType.LOG_EVIDENCE_CHAIN.value: 5.0,
+    FbiTaskType.PATROL_CAMERA_FEED.value: 4.0,
+    FbiTaskType.RUN_BACKGROUND_CHECK.value: 5.0,
+    FbiTaskType.SWEEP_FOR_BUGS.value: 5.0,
+    FbiTaskType.VERIFY_ID_DOCUMENTS.value: 4.0,
+    FbiTaskType.RESTOCK_AMMO.value: 3.0,
+    FbiTaskType.SIGN_OUT_WEAPON.value: 4.0,
+    FbiTaskType.CATALOG_DNA_SAMPLE.value: 5.0,
+    FbiTaskType.CROSS_REFERENCE_RECORDS.value: 5.0,
+    FbiTaskType.BRIEF_THE_TEAM.value: 4.0,
+    FbiTaskType.SECURE_PERIMETER.value: 5.0,
+    FbiTaskType.IDENTIFY_REMAINS.value: 6.0,
+    FbiTaskType.REFILL_COFFEE_MACHINE.value: 2.0,
 }
 
 FBI_TASK_ALLOWED_FUNCTIONS: dict[str, list] = {
@@ -438,6 +468,21 @@ FBI_TASK_ALLOWED_FUNCTIONS: dict[str, list] = {
     FbiTaskType.INSPECT_BADGE_SCANNER.value: [RoomFunction.ENTRANCE, RoomFunction.OFFICE],
     FbiTaskType.CALIBRATE_METAL_DETECTOR.value: [RoomFunction.ARMORY],
     FbiTaskType.REVIEW_PERSONNEL_FILES.value: [RoomFunction.OFFICE, RoomFunction.BREAK_ROOM],
+    FbiTaskType.DUST_FOR_PRINTS.value: [RoomFunction.FORENSICS_LAB],
+    FbiTaskType.INTERVIEW_WITNESS.value: [RoomFunction.BREAK_ROOM],
+    FbiTaskType.LOG_EVIDENCE_CHAIN.value: [RoomFunction.FORENSICS_LAB],
+    FbiTaskType.PATROL_CAMERA_FEED.value: [RoomFunction.SURVEILLANCE],
+    FbiTaskType.RUN_BACKGROUND_CHECK.value: [RoomFunction.SERVER_ROOM],
+    FbiTaskType.SWEEP_FOR_BUGS.value: [RoomFunction.COMMS_MONITOR],
+    FbiTaskType.VERIFY_ID_DOCUMENTS.value: [RoomFunction.ENTRANCE],
+    FbiTaskType.RESTOCK_AMMO.value: [RoomFunction.ARMORY],
+    FbiTaskType.SIGN_OUT_WEAPON.value: [RoomFunction.ARMORY],
+    FbiTaskType.CATALOG_DNA_SAMPLE.value: [RoomFunction.DNA_ARCHIVE],
+    FbiTaskType.CROSS_REFERENCE_RECORDS.value: [RoomFunction.DNA_ARCHIVE],
+    FbiTaskType.BRIEF_THE_TEAM.value: [RoomFunction.OFFICE],
+    FbiTaskType.SECURE_PERIMETER.value: [RoomFunction.ENTRANCE],
+    FbiTaskType.IDENTIFY_REMAINS.value: [RoomFunction.MORGUE],
+    FbiTaskType.REFILL_COFFEE_MACHINE.value: [RoomFunction.BREAK_ROOM],
 }
 
 
