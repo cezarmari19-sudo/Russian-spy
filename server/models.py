@@ -564,10 +564,10 @@ class GameRoom:
     # tip poate fi ocupat simultan - masina compara o singura pereche o data.
     lab_machine_harvested_sample_id: Optional[str] = None
     lab_machine_reference_sample_id: Optional[str] = None
-    # Pozitia fixa (in interiorul camerei Laborator Criminalistic) a masinii de
-    # comparare ADN pentru RUNDA curenta - generata random la start_game(), la
-    # fel ca surveillance_cameras. Jucatorul trebuie sa fie langa acest punct
-    # (nu doar oriunde in camera) ca sa poata folosi masina.
+    # Pozitia FIXA (coltul stanga-sus al camerei Laborator Criminalistic) a
+    # masinii de comparare ADN - aceeasi in fiecare runda, setata la
+    # start_game(). Jucatorul trebuie sa fie langa acest punct (nu doar oriunde
+    # in camera) ca sa poata folosi masina.
     lab_machine_x: float = 0.0
     lab_machine_y: float = 0.0
     # Mesajele de chat din camera de asteptare (lobby) - pastrate in memorie,
