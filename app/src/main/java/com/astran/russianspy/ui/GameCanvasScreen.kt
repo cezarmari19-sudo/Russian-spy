@@ -655,6 +655,36 @@ fun GameCanvasScreen(
             }
         }
 
+        // Buton "Urgenta" - vizibil DOAR cand jucatorul VIU e langa aparatul
+        // de urgenta din mijlocul Salii de Intalniri (punct fix, la fel ca
+        // masina de laborator sau statia din Arhiva ADN) - NU mai apare
+        // oriunde pe harta. Cat timp nu exista deja un meeting activ SI nu
+        // si-a folosit deja toate cele emergencyMeetingsPerPlayer chemari
+        // din runda asta. La fel ca butonul rosu din Among Us, care e fizic
+        // pe masa din sala de mese - nu are legatura cu gasirea unui corp.
+        val distToEmergencyButton = kotlin.math.hypot(
+            playerX - BuildingLayout.EMERGENCY_BUTTON_X,
+            playerY - BuildingLayout.EMERGENCY_BUTTON_Y
+        )
+        val isNearEmergencyButton = distToEmergencyButton <= BuildingLayout.MONITOR_INTERACT_RADIUS
+        val emergencyLimit = viewModel.emergencyMeetingsPerPlayer.value
+        val emergencyUsed = viewModel.emergencyMeetingsUsedByMe.value
+        val canCallEmergency = emergencyLimit > 0 && emergencyUsed < emergencyLimit
+        if (isNearEmergencyButton && canCallEmergency && activeTaskDialog == null &&
+            viewModel.activeMeeting.value == null && !viewModel.isDead.value
+        ) {
+            Button(
+                onClick = { viewModel.callEmergencyMeeting() },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B0000)),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(24.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            ) {
+                Text("🚨 Urgenta (${emergencyLimit - emergencyUsed})")
+            }
+        }
+
         // Task de spion / dispozitiv suspect din apropiere - EXACT aceeasi logica
         // de proximitate ca la monitorul de supraveghere (jucatorul trebuie sa
         // fie fizic langa punctul x/y al task-ului, nu doar in aceeasi camera).
@@ -899,7 +929,11 @@ private fun MeetingVoteScreen(
             Text("📢 Intalnire de urgenta", color = Color.White, fontSize = 20.sp)
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                "${meeting.reporterName} a raportat un corp gasit in cladire.",
+                if (meeting.reason == "EMERGENCY_BUTTON") {
+                    "${meeting.reporterName} a sunat urgenta."
+                } else {
+                    "${meeting.reporterName} a raportat un corp gasit in cladire."
+                },
                 color = Color(0xFFCCCCCC),
                 fontSize = 13.sp
             )
