@@ -80,4 +80,10 @@ object BuildingLayout {
     const val MORGUE_WALL_X_MAX = 750f
     const val MORGUE_WALL_Y = 150f
     const val MORGUE_WALL_DEPTH = 90f
+
+    // Pozitia FIXA a statiei de arhivare din Arhiva ADN - langa peretele din
+    // STANGA al camerei (punct unic, la fel ca masina de laborator), nu banda
+    // de perete ca la Morga si nu oriunde in camera ca inainte.
+    const val DNA_ARCHIVE_STATION_X = 95f
+    const val DNA_ARCHIVE_STATION_Y = 275f
 }
