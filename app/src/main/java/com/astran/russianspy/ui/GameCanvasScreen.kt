@@ -470,198 +470,38 @@ fun GameCanvasScreen(
             )
         }
 
-        // Buton "Camere", vizibil DOAR cand jucatorul e langa monitorul fizic din
-        // camera de Supraveghere (nu oriunde in camera - altfel e prea usor/OP).
+        // ===================================================================
+        // MODEL UNIFICAT DE INTERACTIUNE, stil Among Us: 3 butoane FIXE, mereu
+        // vizibile in coltul din dreapta-jos, aranjate in piramida (Use jos-
+        // centru, Kill deasupra lui, Report in stanga-jos fata de Use). Nu mai
+        // dispar cand nu ai nimic aproape - raman vizibile dar dezactivate
+        // (gri), la fel ca in Among Us. Doar iconite, fara text.
+        // ===================================================================
+
+        // --- Calculam TOATE proximitatile posibile pentru butonul "Use" ---
+        // (Camere, Laborator, Morga, Arhiva ADN, Urgenta, Task de spion/
+        // dispozitiv suspect) si retinem PRIMA gasita - camerele nu se
+        // suprapun spatial, deci practic doar una poate fi adevarata odata.
         val distToMonitor = kotlin.math.hypot(
             playerX - BuildingLayout.SURVEILLANCE_MONITOR_X,
             playerY - BuildingLayout.SURVEILLANCE_MONITOR_Y
         )
         val isNearMonitor = distToMonitor <= BuildingLayout.MONITOR_INTERACT_RADIUS
-        if (isNearMonitor && viewModel.activeMeeting.value == null) {
-            Button(
-                onClick = onOpenSurveillanceMonitors,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(24.dp)
-                    .clip(RoundedCornerShape(12.dp))
-            ) {
-                Text("📹 Camere")
-            }
-        }
 
-        // Buton "Laborator", vizibil DOAR cand jucatorul e langa masina fizica
-        // de comparare ADN din Laborator Criminalistic (nu oriunde in camera -
-        // la fel ca la monitorul de supraveghere).
         val (labMachineX, labMachineY) = viewModel.labMachinePos.value
         val distToLabMachine = kotlin.math.hypot(playerX - labMachineX, playerY - labMachineY)
         val isNearLabMachine = distToLabMachine <= BuildingLayout.MONITOR_INTERACT_RADIUS
-        if (isNearLabMachine && viewModel.activeMeeting.value == null) {
-            val forensicsRoom = BuildingLayout.getRoomById("forensics")
-            if (forensicsRoom != null) {
-                Button(
-                    onClick = { onEnterTask(forensicsRoom) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C)),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(24.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                ) {
-                    Text("🔬 Laborator")
-                }
-            }
-        }
 
-        // Buton "Morga", vizibil DOAR cand jucatorul e langa peretele de SUS al
-        // camerei Morga (o banda intreaga de-a lungul peretelui, nu un singur
-        // punct fix - modelul lung de aparate care tin corpurile ocupa tot
-        // peretele). Spre deosebire de laborator (punct exact) sau de
-        // butonul generic (oriunde in camera).
         val isNearMorgueWall = playerX in BuildingLayout.MORGUE_WALL_X_MIN..BuildingLayout.MORGUE_WALL_X_MAX &&
             playerY >= BuildingLayout.MORGUE_WALL_Y &&
             playerY <= BuildingLayout.MORGUE_WALL_Y + BuildingLayout.MORGUE_WALL_DEPTH
-        if (isNearMorgueWall && viewModel.activeMeeting.value == null) {
-            val morgueRoom = BuildingLayout.getRoomById("morgue")
-            if (morgueRoom != null) {
-                Button(
-                    onClick = { onEnterTask(morgueRoom) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C)),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(24.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                ) {
-                    Text("⚰️ Morga")
-                }
-            }
-        }
 
-        // Buton "Arhiva ADN", vizibil DOAR cand jucatorul e langa statia de
-        // arhivare de langa peretele din STANGA al camerei (punct fix, la fel
-        // ca masina de laborator) - nu mai e vizibil oriunde in camera.
         val distToDnaArchiveStation = kotlin.math.hypot(
             playerX - BuildingLayout.DNA_ARCHIVE_STATION_X,
             playerY - BuildingLayout.DNA_ARCHIVE_STATION_Y
         )
         val isNearDnaArchiveStation = distToDnaArchiveStation <= BuildingLayout.MONITOR_INTERACT_RADIUS
-        if (isNearDnaArchiveStation && viewModel.activeMeeting.value == null) {
-            val dnaArchiveRoom = BuildingLayout.getRoomById("dna_archive")
-            if (dnaArchiveRoom != null) {
-                Button(
-                    onClick = { onEnterTask(dnaArchiveRoom) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C)),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(24.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                ) {
-                    Text("🧬 Arhiva ADN")
-                }
-            }
-        }
 
-        // Butonul de omor - vizibil DOAR spionului, DOAR cand exact un singur
-        // agent FBI viu e in raza de interactiune SI nimeni altcineva viu nu e
-        // in aceeasi camera (fara martori) - server-side se revalideaza totul,
-        // dar verificam si local ca butonul sa nu apara inutil/inselator. Nu
-        // apare in timpul unui meeting (toti stau in meeting_room, oricum).
-        val myRole = viewModel.myRole.value
-        if (myRole == Role.RUSSIAN_SPY && viewModel.activeMeeting.value == null) {
-            val myRoomId = currentRoomIdLocal
-            // Multime de id-uri ale jucatorilor VII (si conectati), calculata
-            // din lobbyPlayers (sursa corecta de isAlive - vezi mai jos la
-            // alivePlayers). playerLivePositions NU e curatata cand un
-            // jucator moare (e curatata doar la deconectare), deci fara acest
-            // filtru, un cadavru ramanea vizibil ca tinta de omor pentru
-            // spion pana la urmatoarea reconectare/repozitionare a victimei -
-            // bugul raportat: "pot omora oameni morti".
-            val alivePlayerIds = viewModel.lobbyPlayers
-                .filter { it.connected && it.isAlive }
-                .map { it.id }
-                .toSet()
-            val playersInRoom = viewModel.playerLivePositions.entries.filter { (pid, pos) ->
-                pid != viewModel.localPlayerId.value && pos.roomId == myRoomId &&
-                    pid in alivePlayerIds
-            }
-            val fbiTargetsNearby = playersInRoom.filter { (_, pos) ->
-                kotlin.math.hypot(playerX - pos.x, playerY - pos.y) <= KILL_INTERACT_RADIUS
-            }
-            val hasWitnesses = playersInRoom.size > fbiTargetsNearby.size ||
-                fbiTargetsNearby.size > 1
-            val killTarget = fbiTargetsNearby.firstOrNull()?.key
-
-            // Cooldown-ul real e tinut in GameViewModel (supravietuieste
-            // navigarii catre Morga/Arhiva/Laborator/Camere - vezi BUGFIX in
-            // GameViewModel.killPlayer), setat de server prin evenimentul
-            // "kill_cooldown_started" dupa fiecare omor reusit, cu durata
-            // REALA a camerei, nu o valoare fixa presupusa de client.
-            // "nowTick" se actualizeaza o data pe secunda, ca numaratoarea
-            // afisata sa scada vizibil - fara acest tick, textul ramanea
-            // "inghetat" pana la urmatoarea recompunere din alt motiv.
-            var nowTick by remember { mutableStateOf(System.currentTimeMillis()) }
-            LaunchedEffect(viewModel.killCooldownUntilMillis.value) {
-                while (System.currentTimeMillis() < viewModel.killCooldownUntilMillis.value) {
-                    delay(500L)
-                    nowTick = System.currentTimeMillis()
-                }
-                nowTick = System.currentTimeMillis()
-            }
-            val onCooldown = nowTick < viewModel.killCooldownUntilMillis.value
-
-            if (killTarget != null && !hasWitnesses && activeTaskDialog == null) {
-                Button(
-                    onClick = {
-                        if (!onCooldown) {
-                            viewModel.killPlayer(killTarget)
-                        }
-                    },
-                    enabled = !onCooldown,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7A0000)),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(24.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                ) {
-                    Text(
-                        if (onCooldown) {
-                            "🔪 Asteapta ${((viewModel.killCooldownUntilMillis.value - nowTick) / 1000L + 1).coerceAtLeast(0)}s"
-                        } else {
-                            "🔪 Omoara"
-                        }
-                    )
-                }
-            }
-        }
-
-        // Buton "Raporteaza corpul" - vizibil pentru ORICE rol (spion SAU agent
-        // FBI), DOAR cand jucatorul e langa un corp inca nereportat SI nu exista
-        // deja un meeting activ (nu poti raporta un al doilea corp in timp ce
-        // se voteaza pentru primul). La fel ca la Among Us, oricine gaseste
-        // corpul poate suna alarma, indiferent de rol.
-        val nearbyCorpse: CorpseInfo? = viewModel.corpses.firstOrNull { corpse ->
-            !corpse.reported &&
-                kotlin.math.hypot(playerX - corpse.x, playerY - corpse.y) <= REPORT_INTERACT_RADIUS
-        }
-        if (nearbyCorpse != null && activeTaskDialog == null && viewModel.activeMeeting.value == null) {
-            Button(
-                onClick = { viewModel.reportCorpse(nearbyCorpse.id) },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E)),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 96.dp)
-                    .clip(RoundedCornerShape(12.dp))
-            ) {
-                Text("📢 Raporteaza corpul")
-            }
-        }
-
-        // Buton "Urgenta" - vizibil DOAR cand jucatorul VIU e langa aparatul
-        // de urgenta din mijlocul Salii de Intalniri (punct fix, la fel ca
-        // masina de laborator sau statia din Arhiva ADN) - NU mai apare
-        // oriunde pe harta. Cat timp nu exista deja un meeting activ SI nu
-        // si-a folosit deja toate cele emergencyMeetingsPerPlayer chemari
-        // din runda asta. La fel ca butonul rosu din Among Us, care e fizic
-        // pe masa din sala de mese - nu are legatura cu gasirea unui corp.
         val distToEmergencyButton = kotlin.math.hypot(
             playerX - BuildingLayout.EMERGENCY_BUTTON_X,
             playerY - BuildingLayout.EMERGENCY_BUTTON_Y
@@ -670,28 +510,8 @@ fun GameCanvasScreen(
         val emergencyLimit = viewModel.emergencyMeetingsPerPlayer.value
         val emergencyUsed = viewModel.emergencyMeetingsUsedByMe.value
         val canCallEmergency = emergencyLimit > 0 && emergencyUsed < emergencyLimit
-        if (isNearEmergencyButton && canCallEmergency && activeTaskDialog == null &&
-            viewModel.activeMeeting.value == null && !viewModel.isDead.value
-        ) {
-            Button(
-                onClick = { viewModel.callEmergencyMeeting() },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B0000)),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(24.dp)
-                    .clip(RoundedCornerShape(12.dp))
-            ) {
-                Text("🚨 Urgenta (${emergencyLimit - emergencyUsed})")
-            }
-        }
 
-        // Task de spion / dispozitiv suspect din apropiere - EXACT aceeasi logica
-        // de proximitate ca la monitorul de supraveghere (jucatorul trebuie sa
-        // fie fizic langa punctul x/y al task-ului, nu doar in aceeasi camera).
-        // Un spion vede DOAR task-urile lui neterminate; un agent FBI vede DOAR
-        // dispozitivele deja plasate (PLANT_LISTENING_DEVICE / HACK_SURVEILLANCE_CAMERA
-        // completate) - task-urile spionului raman complet invizibile agentilor.
-        // Nu apare in timpul unui meeting.
+        val myRole = viewModel.myRole.value
         val nearbyTask: SpyTaskInfo? = if (viewModel.activeMeeting.value == null) {
             viewModel.spyTasks.firstOrNull { task ->
                 val dist = kotlin.math.hypot(playerX - task.x, playerY - task.y)
@@ -705,23 +525,131 @@ fun GameCanvasScreen(
             }
         } else null
 
-        if (nearbyTask != null && activeTaskDialog == null) {
-            val isDisableAction = myRole == Role.FBI_AGENT
-            Button(
-                onClick = {
-                    activeTaskDialog = nearbyTask
-                    activeTaskIsDisableAction = isDisableAction
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isDisableAction) Color(0xFF1976D2) else Color(0xFFB3261E)
-                ),
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(24.dp)
-                    .clip(RoundedCornerShape(12.dp))
-            ) {
-                Text(if (isDisableAction) "⚠ Dispozitiv suspect" else "🎯 Task disponibil")
+        val noMeetingActive = viewModel.activeMeeting.value == null
+
+        // "UseAction" retine ce anume s-ar intampla daca apas butonul Use ACUM
+        // - null inseamna "nimic aproape", deci butonul ramane dezactivat.
+        val useAction: (() -> Unit)? = when {
+            !noMeetingActive -> null
+            isNearMonitor -> onOpenSurveillanceMonitors
+            isNearLabMachine -> BuildingLayout.getRoomById("forensics")?.let { room -> { onEnterTask(room) } }
+            isNearMorgueWall -> BuildingLayout.getRoomById("morgue")?.let { room -> { onEnterTask(room) } }
+            isNearDnaArchiveStation -> BuildingLayout.getRoomById("dna_archive")?.let { room -> { onEnterTask(room) } }
+            isNearEmergencyButton && canCallEmergency && !viewModel.isDead.value -> ({ viewModel.callEmergencyMeeting() })
+            nearbyTask != null && activeTaskDialog == null -> ({
+                activeTaskDialog = nearbyTask
+                activeTaskIsDisableAction = myRole == Role.FBI_AGENT
+            })
+            else -> null
+        }
+        val useIcon = when {
+            !noMeetingActive -> "▶"
+            isNearMonitor -> "📹"
+            isNearLabMachine -> "🔬"
+            isNearMorgueWall -> "⚰️"
+            isNearDnaArchiveStation -> "🧬"
+            isNearEmergencyButton -> "🚨"
+            nearbyTask != null -> if (myRole == Role.FBI_AGENT) "⚠" else "🎯"
+            else -> "▶"
+        }
+
+        // --- Kill: vizibil DOAR spionului, ramane pe ecran mereu (dezactivat
+        // cand nu are tinta valida sau e in cooldown). ---
+        var nowTick by remember { mutableStateOf(System.currentTimeMillis()) }
+        LaunchedEffect(viewModel.killCooldownUntilMillis.value) {
+            while (System.currentTimeMillis() < viewModel.killCooldownUntilMillis.value) {
+                delay(500L)
+                nowTick = System.currentTimeMillis()
             }
+            nowTick = System.currentTimeMillis()
+        }
+        val onCooldown = nowTick < viewModel.killCooldownUntilMillis.value
+
+        var killTarget: String? = null
+        if (myRole == Role.RUSSIAN_SPY && noMeetingActive) {
+            val myRoomId = currentRoomIdLocal
+            val alivePlayerIds = viewModel.lobbyPlayers
+                .filter { it.connected && it.isAlive }
+                .map { it.id }
+                .toSet()
+            val playersInRoom = viewModel.playerLivePositions.entries.filter { (pid, pos) ->
+                pid != viewModel.localPlayerId.value && pos.roomId == myRoomId &&
+                    pid in alivePlayerIds
+            }
+            val fbiTargetsNearby = playersInRoom.filter { (_, pos) ->
+                kotlin.math.hypot(playerX - pos.x, playerY - pos.y) <= KILL_INTERACT_RADIUS
+            }
+            val hasWitnesses = playersInRoom.size > fbiTargetsNearby.size || fbiTargetsNearby.size > 1
+            if (!hasWitnesses) {
+                killTarget = fbiTargetsNearby.firstOrNull()?.key
+            }
+        }
+        val canKillNow = myRole == Role.RUSSIAN_SPY && killTarget != null && !onCooldown &&
+            activeTaskDialog == null && noMeetingActive
+
+        // --- Report: vizibil pentru ORICE rol, dezactivat cand nu e niciun
+        // corp nereportat in raza. ---
+        val nearbyCorpse: CorpseInfo? = viewModel.corpses.firstOrNull { corpse ->
+            !corpse.reported &&
+                kotlin.math.hypot(playerX - corpse.x, playerY - corpse.y) <= REPORT_INTERACT_RADIUS
+        }
+        val canReportNow = nearbyCorpse != null && activeTaskDialog == null && noMeetingActive
+
+        // --- Cele 3 butoane fixe, in piramida, colt dreapta-jos. Doar iconite. ---
+        // Kill - varful piramidei, sus.
+        if (myRole == Role.RUSSIAN_SPY) {
+            Button(
+                onClick = { killTarget?.let { viewModel.killPlayer(it) } },
+                enabled = canKillNow,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF7A0000),
+                    disabledContainerColor = Color(0xFF3A3A3A)
+                ),
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 40.dp, bottom = 168.dp)
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(28.dp))
+            ) {
+                Text("🔪", fontSize = 22.sp)
+            }
+        }
+
+        // Report - stanga-jos fata de Use.
+        Button(
+            onClick = { nearbyCorpse?.let { viewModel.reportCorpse(it.id) } },
+            enabled = canReportNow,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFB3261E),
+                disabledContainerColor = Color(0xFF3A3A3A)
+            ),
+            contentPadding = PaddingValues(0.dp),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 104.dp, bottom = 96.dp)
+                .size(56.dp)
+                .clip(RoundedCornerShape(28.dp))
+        ) {
+            Text("📢", fontSize = 22.sp)
+        }
+
+        // Use - varful de jos al piramidei, centrul grupului de butoane.
+        Button(
+            onClick = { useAction?.invoke() },
+            enabled = useAction != null,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF00695C),
+                disabledContainerColor = Color(0xFF3A3A3A)
+            ),
+            contentPadding = PaddingValues(0.dp),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 40.dp, bottom = 96.dp)
+                .size(64.dp)
+                .clip(RoundedCornerShape(32.dp))
+        ) {
+            Text(useIcon, fontSize = 26.sp)
         }
 
         activeTaskDialog?.let { task ->
