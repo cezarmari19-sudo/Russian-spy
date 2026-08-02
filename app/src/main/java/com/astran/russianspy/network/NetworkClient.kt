@@ -25,7 +25,8 @@ sealed class ServerEvent {
         val players: List<LobbyPlayerInfo>,
         val hostId: String,
         val spyTaskCount: Int? = null,
-        val fbiTaskCount: Int? = null
+        val fbiTaskCount: Int? = null,
+        val emergencyMeetingsPerPlayer: Int? = null
     ) : ServerEvent()
     object RoomDeleted : ServerEvent()
     object YouWereKicked : ServerEvent()
@@ -48,6 +49,7 @@ sealed class ServerEvent {
     data class SosResult(val correct: Boolean) : ServerEvent()
     data class SpyTaskCountChanged(val count: Int) : ServerEvent()
     data class FbiTaskCountChanged(val count: Int) : ServerEvent()
+    data class EmergencyMeetingsPerPlayerChanged(val count: Int) : ServerEvent()
     data class SpyTaskUpdated(val taskId: String, val isCompleted: Boolean) : ServerEvent()
     data class SpyTaskWitnessed(val taskId: String) : ServerEvent()
     data class GameOver(val winner: String) : ServerEvent()
@@ -471,7 +473,8 @@ class NetworkClient(
                         players,
                         hostId = json.optString("hostId", ""),
                         spyTaskCount = if (json.has("spyTaskCount")) json.optInt("spyTaskCount") else null,
-                        fbiTaskCount = if (json.has("fbiTaskCount")) json.optInt("fbiTaskCount") else null
+                        fbiTaskCount = if (json.has("fbiTaskCount")) json.optInt("fbiTaskCount") else null,
+                        emergencyMeetingsPerPlayer = if (json.has("emergencyMeetingsPerPlayer")) json.optInt("emergencyMeetingsPerPlayer") else null
                     )
                 )
             }
@@ -530,6 +533,9 @@ class NetworkClient(
             )
             "fbi_task_count_changed" -> onEvent(
                 ServerEvent.FbiTaskCountChanged(count = json.getInt("count"))
+            )
+            "emergency_meetings_per_player_changed" -> onEvent(
+                ServerEvent.EmergencyMeetingsPerPlayerChanged(count = json.getInt("count"))
             )
             "spy_task_updated" -> onEvent(
                 ServerEvent.SpyTaskUpdated(
@@ -707,6 +713,14 @@ class NetworkClient(
         })
     }
 
+    /** Doar host-ul poate seta acest numar, si doar in LOBBY (verificat pe server). */
+    fun sendSetEmergencyMeetingsPerPlayer(count: Int) {
+        send(JSONObject().apply {
+            put("action", "set_emergency_meetings_per_player")
+            put("count", count)
+        })
+    }
+
     /** Apelat de client dupa ce hold-ul de durata corecta s-a terminat, pentru un task de spion. */
     fun sendCompleteSpyTask(taskId: String) {
         send(JSONObject().apply {
@@ -791,6 +805,16 @@ class NetworkClient(
         send(JSONObject().apply {
             put("action", "report_corpse")
             put("corpseId", corpseId)
+        })
+    }
+
+    /** Apelat de ORICE jucator viu, prin buton, ca sa cheme o intalnire de
+     * urgenta FARA sa fie nevoie de un corp - la fel ca butonul rosu din
+     * Among Us. Limitat de room.emergency_meetings_per_player (validat pe
+     * server, clientul doar trimite intentia). */
+    fun sendCallEmergencyMeeting() {
+        send(JSONObject().apply {
+            put("action", "call_emergency_meeting")
         })
     }
 
