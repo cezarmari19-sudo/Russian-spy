@@ -86,4 +86,11 @@ object BuildingLayout {
     // de perete ca la Morga si nu oriunde in camera ca inainte.
     const val DNA_ARCHIVE_STATION_X = 95f
     const val DNA_ARCHIVE_STATION_Y = 275f
+
+    // Pozitia FIXA a aparatului de urgenta - chiar in MIJLOCUL Salii de
+    // Intalniri (meeting_room, x=2100, y=1350, w=300, h=300), punct unic ca
+    // la masina de laborator sau statia din Arhiva ADN. Aceeasi camera in
+    // care jucatorii sunt tele-portati automat cand incepe un meeting.
+    const val EMERGENCY_BUTTON_X = 2250f
+    const val EMERGENCY_BUTTON_Y = 1500f
 }
