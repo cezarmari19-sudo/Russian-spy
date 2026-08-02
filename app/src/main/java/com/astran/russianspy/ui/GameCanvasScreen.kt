@@ -528,6 +528,16 @@ fun GameCanvasScreen(
 
         val noMeetingActive = viewModel.activeMeeting.value == null
 
+        // Statia de Comunicatii (SOS Morse) - punct fix, la fel ca laboratorul.
+        // Vizibila DOAR agentilor FBI, DOAR dupa deblocaj (toti agentii FBI vii
+        // au terminat task-urile cosmetice).
+        val distToCommsStation = kotlin.math.hypot(
+            playerX - BuildingLayout.COMMS_STATION_X,
+            playerY - BuildingLayout.COMMS_STATION_Y
+        )
+        val isNearCommsStation = distToCommsStation <= BuildingLayout.MONITOR_INTERACT_RADIUS &&
+            myRole == Role.FBI_AGENT && viewModel.commsUnlocked.value && !viewModel.isDead.value
+
         // "UseAction" retine ce anume s-ar intampla daca apas butonul Use ACUM
         // - null inseamna "nimic aproape", deci butonul ramane dezactivat.
         val useAction: (() -> Unit)? = when {
@@ -536,6 +546,7 @@ fun GameCanvasScreen(
             isNearLabMachine -> BuildingLayout.getRoomById("forensics")?.let { room -> { onEnterTask(room) } }
             isNearMorgueWall -> BuildingLayout.getRoomById("morgue")?.let { room -> { onEnterTask(room) } }
             isNearDnaArchiveStation -> BuildingLayout.getRoomById("dna_archive")?.let { room -> { onEnterTask(room) } }
+            isNearCommsStation -> onOpenCommunications
             isNearEmergencyButton && canCallEmergency && !viewModel.isDead.value -> ({ viewModel.callEmergencyMeeting() })
             nearbyTask != null && activeTaskDialog == null -> ({
                 activeTaskDialog = nearbyTask
@@ -549,6 +560,7 @@ fun GameCanvasScreen(
             isNearLabMachine -> "🔬"
             isNearMorgueWall -> "⚰️"
             isNearDnaArchiveStation -> "🧬"
+            isNearCommsStation -> "📡"
             isNearEmergencyButton -> "🚨"
             nearbyTask != null -> if (myRole == Role.FBI_AGENT) "⚠" else "🎯"
             else -> "▶"
@@ -715,26 +727,6 @@ fun GameCanvasScreen(
                 },
                 onCancel = { activeFbiTaskDialog = null }
             )
-        }
-
-        // Buton catre ecranul de Comunicatii (SOS Morse) - vizibil DOAR pentru
-        // agenti FBI VII, DOAR dupa ce s-au deblocat (toti agentii FBI vii au
-        // terminat task-urile cosmetice), si DOAR cand jucatorul e fizic in
-        // camera COMMS_MONITOR. Nu apare in timpul unui meeting.
-        val isInCommsRoom = BuildingLayout.getRoomById(currentRoomIdLocal)?.function == RoomFunction.COMMS_MONITOR
-        if (myRole == Role.FBI_AGENT && viewModel.commsUnlocked.value && isInCommsRoom &&
-            viewModel.activeMeeting.value == null && !viewModel.isDead.value
-        ) {
-            Button(
-                onClick = { onOpenCommunications() },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C)),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(24.dp)
-                    .clip(RoundedCornerShape(12.dp))
-            ) {
-                Text("📡 Comunicatii - SOS")
-            }
         }
 
         // Ecran de spectator - afisat DOAR pe clientul victimei, dupa "you_were_killed".
