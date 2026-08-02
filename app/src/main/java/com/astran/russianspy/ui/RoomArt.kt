@@ -1101,3 +1101,149 @@ fun DrawScope.drawMeetingRoomDetailed(w: Float, h: Float) {
 
     drawRoomVignette(w, h)
 }
+
+// ============================================================================
+// LABORATOR CRIMINALISTIC - atmosfera sterila, rece, stiintifica
+// ============================================================================
+
+/**
+ * Geometrie reala (BuildingLayout.kt): camera "forensics" e x:400-750, y:500-750
+ * (350x250). Singurul acces: hall_forensics intra prin peretele de JOS, pe
+ * x:500-600 (local x: 100-200 din 350, adica ~29%-57% din latime) -> acea zona
+ * ramane libera. Masina de comparare ADN (punctul real de interactiune,
+ * lab_machine_x/y din server, coltul stanga-sus cu marja 15%) e desenata
+ * EXACT acolo, ca sa coincida vizual cu zona apasabila.
+ */
+fun DrawScope.drawForensicsLabDetailed(w: Float, h: Float) {
+    // Podeaua: alb-albastrui rece si steril, contrastant cu tonul cald al Pauzei
+    // si cel intunecat al restului cladirii - un laborator trebuie sa para curat.
+    drawRect(color = Color(0xFF1A2226), topLeft = Offset.Zero, size = Size(w, h))
+    drawFloorGrid(w, h, cell = w / 10f)
+
+    val cyanGlow = Color(0xFF3AC9E8)
+    val cyanGlowDim = Color(0xFF1E7A8C)
+
+    // --- Masina de comparare ADN, coltul STANGA-SUS (punctul real de interactiune) ---
+    val machineW = w * 0.22f
+    val machineH = h * 0.30f
+    val machineLeft = w * 0.06f
+    val machineTop = h * 0.06f
+
+    // Umbra sub aparat.
+    drawRect(
+        color = Color.Black.copy(alpha = 0.3f),
+        topLeft = Offset(machineLeft - 2f, machineTop + machineH),
+        size = Size(machineW + 4f, h * 0.02f)
+    )
+    solidRect(Offset(machineLeft, machineTop), Size(machineW, machineH), RoomTheme.metalDark)
+    // Ecranul aparatului, cu glow cyan (analiza ADN activa vizual).
+    val screenPad = machineW * 0.12f
+    drawRect(
+        color = cyanGlowDim.copy(alpha = 0.6f),
+        topLeft = Offset(machineLeft + screenPad, machineTop + screenPad),
+        size = Size(machineW - screenPad * 2f, machineH * 0.4f)
+    )
+    // 2 sloturi orizontale (proba recoltata / proba de referinta).
+    for (i in 0..1) {
+        drawRect(
+            color = RoomTheme.metalDarker,
+            topLeft = Offset(machineLeft + screenPad, machineTop + machineH * 0.55f + i * machineH * 0.2f),
+            size = Size(machineW - screenPad * 2f, machineH * 0.13f)
+        )
+    }
+    // Glow cyan in jurul aparatului - sursa principala de lumina a camerei.
+    drawRect(
+        brush = Brush.radialGradient(
+            colors = listOf(cyanGlow.copy(alpha = 0.18f), Color.Transparent),
+            center = Offset(machineLeft + machineW / 2f, machineTop + machineH * 0.35f),
+            radius = machineW * 1.8f
+        ),
+        topLeft = Offset(machineLeft - machineW * 0.6f, machineTop - machineH * 0.5f),
+        size = Size(machineW * 2.2f, machineH * 2f)
+    )
+
+    // --- Masa de lucru cu microscop, lipita de peretele de SUS (partea dreapta) ---
+    val deskW = w * 0.42f
+    val deskH = h * 0.12f
+    val deskLeft = w * 0.52f
+    val deskTop = h * 0.04f
+
+    drawRect(
+        color = Color.Black.copy(alpha = 0.3f),
+        topLeft = Offset(deskLeft - 2f, deskTop + deskH),
+        size = Size(deskW + 4f, h * 0.015f)
+    )
+    solidRect(Offset(deskLeft, deskTop), Size(deskW, deskH), RoomTheme.metalLight)
+    // Microscopul: o baza + un "brat" vertical, desenat simplu ca 2 dreptunghiuri.
+    val microBaseW = deskW * 0.16f
+    val microBaseX = deskLeft + deskW * 0.65f
+    solidRect(
+        Offset(microBaseX, deskTop - deskH * 0.05f),
+        Size(microBaseW, deskH * 1.1f),
+        RoomTheme.metalDarker
+    )
+    drawRect(
+        color = RoomTheme.objectOutline,
+        topLeft = Offset(microBaseX + microBaseW * 0.35f, deskTop - deskH * 0.55f),
+        size = Size(microBaseW * 0.3f, deskH * 0.5f)
+    )
+    // Cateva foi/dosare pe masa.
+    drawRect(
+        color = Color(0xFF6C7A85).copy(alpha = 0.45f),
+        topLeft = Offset(deskLeft + deskW * 0.1f, deskTop + deskH * 0.35f),
+        size = Size(deskW * 0.18f, deskH * 0.5f)
+    )
+
+    // --- Raft cu eprubete, lipit de peretele din DREAPTA (zona clar libera) ---
+    val rackW = w * 0.09f
+    val rackH = h * 0.42f
+    val rackLeft = w * 0.90f
+    val rackTop = h * 0.30f
+
+    solidRect(Offset(rackLeft, rackTop), Size(rackW, rackH), RoomTheme.metalDarker)
+    // 3 randuri x 2 coloane de eprubete (cercuri mici colorate, ca niste probe).
+    val tubeColors = listOf(cyanGlow, RoomTheme.accentWarm, Color(0xFF8B2E2E))
+    for (row in 0..2) {
+        for (col in 0..1) {
+            val tx = rackLeft + rackW * (0.3f + col * 0.4f)
+            val ty = rackTop + rackH * (0.18f + row * 0.3f)
+            drawLine(
+                RoomTheme.objectOutline,
+                Offset(tx, ty - rackH * 0.08f),
+                Offset(tx, ty + rackH * 0.08f),
+                strokeWidth = 2f
+            )
+            drawCircle(
+                color = tubeColors[(row + col) % tubeColors.size].copy(alpha = 0.7f),
+                radius = rackW * 0.08f,
+                center = Offset(tx, ty + rackH * 0.06f)
+            )
+        }
+    }
+
+    // --- Masuta centrala cu proba sub examinare, jos-centru (zona libera) ---
+    val tableCenterX = w * 0.42f
+    val tableCenterY = h * 0.82f
+    val tableRadius = w * 0.09f
+
+    drawCircle(
+        color = Color.Black.copy(alpha = 0.3f),
+        radius = tableRadius * 1.05f,
+        center = Offset(tableCenterX, tableCenterY + tableRadius * 0.12f)
+    )
+    drawCircle(color = RoomTheme.metalDark, radius = tableRadius, center = Offset(tableCenterX, tableCenterY))
+    drawCircle(
+        color = RoomTheme.objectOutline,
+        radius = tableRadius,
+        center = Offset(tableCenterX, tableCenterY),
+        style = Stroke(width = 2f)
+    )
+    // O placuta de proba, luminata usor in cyan (aceeasi tema ca aparatul principal).
+    drawRect(
+        color = cyanGlow.copy(alpha = 0.35f),
+        topLeft = Offset(tableCenterX - tableRadius * 0.35f, tableCenterY - tableRadius * 0.2f),
+        size = Size(tableRadius * 0.7f, tableRadius * 0.4f)
+    )
+
+    drawRoomVignette(w, h)
+}
