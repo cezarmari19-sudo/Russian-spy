@@ -75,7 +75,8 @@ async def broadcast_lobby_update(room_code: str):
         "players": players_payload,
         "hostId": room.host_id,
         "spyTaskCount": room.spy_task_count,
-        "fbiTaskCount": room.fbi_task_count
+        "fbiTaskCount": room.fbi_task_count,
+        "emergencyMeetingsPerPlayer": room.emergency_meetings_per_player
     })
 
 
@@ -446,6 +447,17 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         "count": count
                     })
 
+            elif action == "set_emergency_meetings_per_player":
+                count = data.get("count", 1)
+                error = game_manager.set_emergency_meetings_per_player(room_code, player_id, count)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    await broadcast_to_room(room_code, {
+                        "type": "emergency_meetings_per_player_changed",
+                        "count": count
+                    })
+
             elif action == "complete_spy_task" or action == "disable_spy_device":
                 task_id = data.get("taskId", "")
                 room = game_manager.get_room(room_code)
@@ -624,6 +636,24 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                         if room_code not in _meeting_watchers:
                             _meeting_watchers.add(room_code)
                             asyncio.create_task(_meeting_watcher(room_code))
+
+            elif action == "call_emergency_meeting":
+                error, meeting = game_manager.call_emergency_meeting(room_code, player_id)
+                if error:
+                    await websocket.send_text(json.dumps({"type": "error", "message": error}))
+                else:
+                    # Nu exista corp de anuntat aici - doar chemarea propriu-zisa.
+                    await broadcast_to_room(room_code, {
+                        "type": "meeting_called",
+                        "reason": "EMERGENCY_BUTTON",
+                        "reporterId": meeting.reporter_id,
+                        "reporterName": meeting.reporter_name,
+                        "durationSeconds": meeting.duration_seconds,
+                    })
+                    await broadcast_lobby_update(room_code)
+                    if room_code not in _meeting_watchers:
+                        _meeting_watchers.add(room_code)
+                        asyncio.create_task(_meeting_watcher(room_code))
 
             elif action == "tamper_corpse_dna":
                 # Doar spionul, doar pe un corp aflat in Morga si inca
