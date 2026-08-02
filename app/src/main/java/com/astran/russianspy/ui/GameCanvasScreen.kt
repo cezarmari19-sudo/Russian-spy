@@ -255,7 +255,7 @@ fun GameCanvasScreen(
                                 drawHallwayDetailed(sizePx.width, sizePx.height)
                             }
                         }
-                    } else if (room.id == "surveillance" || room.id == "armory" || room.id == "break_room" || room.id == "office1" || room.id == "office2" || room.id == "hub_central" || room.id == "server_room" || room.id == "meeting_room") {
+                    } else if (room.id == "surveillance" || room.id == "armory" || room.id == "break_room" || room.id == "office1" || room.id == "office2" || room.id == "hub_central" || room.id == "server_room" || room.id == "meeting_room" || room.id == "forensics") {
                         // Camerele detaliate se deseneaza complet vectorial - vezi RoomArt.kt
                         // pentru continutul fiecareia, stil "FBI misterios" consistent.
                         // translate() muta originea (0,0) in coltul camerei, ca desenul
@@ -271,6 +271,7 @@ fun GameCanvasScreen(
                                     "hub_central" -> drawHubCentralDetailed(sizePx.width, sizePx.height)
                                     "server_room" -> drawServerRoomDetailed(sizePx.width, sizePx.height)
                                     "meeting_room" -> drawMeetingRoomDetailed(sizePx.width, sizePx.height)
+                                    "forensics" -> drawForensicsLabDetailed(sizePx.width, sizePx.height)
                                 }
                             }
                         }
