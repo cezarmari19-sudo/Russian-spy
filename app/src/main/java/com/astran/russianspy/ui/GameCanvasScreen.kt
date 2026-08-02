@@ -536,24 +536,27 @@ fun GameCanvasScreen(
             }
         }
 
-        // Buton generic de intrare - vizibil DOAR in Arhiva ADN, oriunde in
-        // interiorul camerei (nu necesita un punct exact). Laboratorul
-        // Criminalistic si Morga NU mai sunt aici - au propriile butoane de
-        // proximitate mai sus (punct fix, respectiv banda de perete). Nu apare
-        // in timpul unui meeting.
-        val currentRoom = BuildingLayout.getRoomById(currentRoomIdLocal)
-        if (currentRoom != null && viewModel.activeMeeting.value == null &&
-            currentRoom.function == RoomFunction.DNA_ARCHIVE
-        ) {
-            Button(
-                onClick = { onEnterTask(currentRoom) },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C)),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(24.dp)
-                    .clip(RoundedCornerShape(12.dp))
-            ) {
-                Text("🧬 Arhiva ADN")
+        // Buton "Arhiva ADN", vizibil DOAR cand jucatorul e langa statia de
+        // arhivare de langa peretele din STANGA al camerei (punct fix, la fel
+        // ca masina de laborator) - nu mai e vizibil oriunde in camera.
+        val distToDnaArchiveStation = kotlin.math.hypot(
+            playerX - BuildingLayout.DNA_ARCHIVE_STATION_X,
+            playerY - BuildingLayout.DNA_ARCHIVE_STATION_Y
+        )
+        val isNearDnaArchiveStation = distToDnaArchiveStation <= BuildingLayout.MONITOR_INTERACT_RADIUS
+        if (isNearDnaArchiveStation && viewModel.activeMeeting.value == null) {
+            val dnaArchiveRoom = BuildingLayout.getRoomById("dna_archive")
+            if (dnaArchiveRoom != null) {
+                Button(
+                    onClick = { onEnterTask(dnaArchiveRoom) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C)),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(24.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                ) {
+                    Text("🧬 Arhiva ADN")
+                }
             }
         }
 
