@@ -404,6 +404,7 @@ class GameManager:
             player = room.players[pid]
             player.role = Role.RUSSIAN_SPY if pid == spy_id else Role.FBI_AGENT
             player.current_room_id = "entrance"
+            player.emergency_meetings_used = 0
 
         room.phase = room.phase.__class__.IN_PROGRESS
         room.surveillance_cameras = self._generate_random_camera_spots()
@@ -485,6 +486,22 @@ class GameManager:
         if count < 1 or count > 20:
             return "Numarul de task-uri trebuie sa fie intre 1 si 20"
         room.fbi_task_count = count
+        return None
+
+    def set_emergency_meetings_per_player(self, room_code: str, requesting_player_id: str, count: int) -> Optional[str]:
+        """Doar host-ul poate seta cate intalniri de urgenta (buton, fara
+        raportare de corp) are voie sa cheme fiecare jucator per runda (0-5),
+        si doar inainte ca jocul sa inceapa (in LOBBY)."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista"
+        if requesting_player_id != room.host_id:
+            return "Doar hostul poate schimba aceasta setare"
+        if room.phase != GamePhase.LOBBY:
+            return "Nu poti schimba aceasta setare in timpul meciului"
+        if count < 0 or count > 5:
+            return "Numarul de intalniri de urgenta trebuie sa fie intre 0 si 5"
+        room.emergency_meetings_per_player = count
         return None
 
     def _generate_spy_tasks(self, room: GameRoom) -> list[SpyTaskInstance]:
@@ -894,6 +911,48 @@ class GameManager:
             started_at_millis=time.time() * 1000,
             reporter_id=reporter_id,
             reporter_name=reporter.name,
+        )
+        room.active_meeting = meeting
+        return None, meeting
+
+    def call_emergency_meeting(self, room_code: str, caller_id: str) -> tuple[Optional[str], Optional[Meeting]]:
+        """Orice jucator viu poate suna o intalnire de urgenta prin buton,
+        FARA sa fie nevoie de un cadavru gasit - la fel ca butonul rosu din
+        Among Us. Limitata la room.emergency_meetings_per_player apeluri per
+        jucator, per runda (0 = dezactivat complet). Restul mecanicii e
+        identica cu report_corpse: toti jucatorii vii sunt adusi in
+        meeting_room si primesc un timp fix ca sa voteze.
+        Returneaza (eroare, None) daca esueaza, sau (None, meeting) daca
+        reuseste."""
+        room = self.rooms.get(room_code)
+        if room is None:
+            return "Camera nu exista", None
+        if room.phase != GamePhase.IN_PROGRESS:
+            return "Jocul nu e in desfasurare", None
+        if room.active_meeting is not None:
+            return "Exista deja o intalnire in desfasurare", None
+        if room.emergency_meetings_per_player <= 0:
+            return "Intalnirile de urgenta sunt dezactivate in aceasta camera", None
+
+        caller = room.players.get(caller_id)
+        if caller is None or not caller.is_alive:
+            return "Doar un jucator viu poate suna urgenta", None
+        if caller.emergency_meetings_used >= room.emergency_meetings_per_player:
+            return "Ai folosit deja toate intalnirile de urgenta din aceasta runda", None
+
+        caller.emergency_meetings_used += 1
+
+        # Toti jucatorii VII sunt adusi in sala de intalniri - identic cu
+        # report_corpse, dar fara nicio manipulare de cadavru.
+        for player in room.players.values():
+            if player.is_alive:
+                player.current_room_id = "meeting_room"
+
+        meeting = Meeting(
+            started_at_millis=time.time() * 1000,
+            reporter_id=caller_id,
+            reporter_name=caller.name,
+            is_emergency=True,
         )
         room.active_meeting = meeting
         return None, meeting
