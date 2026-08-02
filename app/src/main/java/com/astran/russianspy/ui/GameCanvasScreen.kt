@@ -512,22 +512,39 @@ fun GameCanvasScreen(
             }
         }
 
-        // Buton generic de intrare - vizibil in Morga si Arhiva ADN, oriunde in
+        // Buton "Morga", vizibil DOAR cand jucatorul e langa peretele de SUS al
+        // camerei Morga (o banda intreaga de-a lungul peretelui, nu un singur
+        // punct fix - modelul lung de aparate care tin corpurile ocupa tot
+        // peretele). Spre deosebire de laborator (punct exact) sau de
+        // butonul generic (oriunde in camera).
+        val isNearMorgueWall = playerX in BuildingLayout.MORGUE_WALL_X_MIN..BuildingLayout.MORGUE_WALL_X_MAX &&
+            playerY >= BuildingLayout.MORGUE_WALL_Y &&
+            playerY <= BuildingLayout.MORGUE_WALL_Y + BuildingLayout.MORGUE_WALL_DEPTH
+        if (isNearMorgueWall && viewModel.activeMeeting.value == null) {
+            val morgueRoom = BuildingLayout.getRoomById("morgue")
+            if (morgueRoom != null) {
+                Button(
+                    onClick = { onEnterTask(morgueRoom) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C)),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(24.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                ) {
+                    Text("⚰️ Morga")
+                }
+            }
+        }
+
+        // Buton generic de intrare - vizibil DOAR in Arhiva ADN, oriunde in
         // interiorul camerei (nu necesita un punct exact). Laboratorul
-        // Criminalistic NU mai e aici - are propriul buton de proximitate mai
-        // sus, legat de pozitia fizica a masinii de comparare ADN. Nu apare in
-        // timpul unui meeting.
+        // Criminalistic si Morga NU mai sunt aici - au propriile butoane de
+        // proximitate mai sus (punct fix, respectiv banda de perete). Nu apare
+        // in timpul unui meeting.
         val currentRoom = BuildingLayout.getRoomById(currentRoomIdLocal)
         if (currentRoom != null && viewModel.activeMeeting.value == null &&
-            currentRoom.function in listOf(
-                RoomFunction.MORGUE, RoomFunction.DNA_ARCHIVE
-            )
+            currentRoom.function == RoomFunction.DNA_ARCHIVE
         ) {
-            val label = when (currentRoom.function) {
-                RoomFunction.MORGUE -> "⚰️ Morga"
-                RoomFunction.DNA_ARCHIVE -> "🧬 Arhiva ADN"
-                else -> "Intra"
-            }
             Button(
                 onClick = { onEnterTask(currentRoom) },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C)),
@@ -536,7 +553,7 @@ fun GameCanvasScreen(
                     .padding(24.dp)
                     .clip(RoundedCornerShape(12.dp))
             ) {
-                Text(label)
+                Text("🧬 Arhiva ADN")
             }
         }
 
