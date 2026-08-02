@@ -1,5 +1,6 @@
 import json
 import asyncio
+import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -28,6 +29,19 @@ account_connections: dict[str, WebSocket] = {}
 
 # tine minte ultima pozitie X/Y cunoscuta pentru fiecare jucator, per camera de joc
 last_positions: dict[str, dict[str, dict]] = {}
+
+# Tine minte timpul (time.time(), secunde) al ultimului heartbeat primit de la
+# fiecare jucator - clientul trimite un heartbeat la fiecare 2s CAT TIMP
+# aplicatia e activa in prim-plan (vezi NetworkClient.kt). Daca un jucator
+# rateaza HEARTBEAT_TIMEOUT_SECONDS fara sa trimita nimic (echivalentul a 2
+# heartbeat-uri consecutive ratate, cu marja pentru jitter de retea), un task
+# de fundal (_heartbeat_watcher) il deconecteaza automat, la fel ca la o
+# pierdere reala de conexiune - complementar sistemului de lifecycle
+# (ON_STOP/ON_START) din client, care acopera doar minimizarea aplicatiei.
+last_heartbeat_at: dict[str, dict[str, float]] = {}
+HEARTBEAT_INTERVAL_SECONDS = 2.0
+HEARTBEAT_TIMEOUT_SECONDS = 4.5
+_heartbeat_watchers: set[str] = set()
 
 # Codurile de camera care au ACUM un task de fundal activ pentru urmarirea
 # expirarii unui meeting - evita pornirea a doi watcheri suprapusi pentru
@@ -135,6 +149,48 @@ async def _meeting_watcher(room_code: str):
         _meeting_watchers.discard(room_code)
 
 
+async def _heartbeat_watcher(room_code: str):
+    """Task de fundal, UNA per camera, cat timp camera exista: verifica la
+    fiecare HEARTBEAT_INTERVAL_SECONDS daca fiecare jucator conectat a trimis
+    un heartbeat in ultimele HEARTBEAT_TIMEOUT_SECONDS - daca nu (echivalentul
+    a ~2 heartbeat-uri consecutive ratate), il deconecteaza automat, IDENTIC
+    cu o pierdere reala de WebSocket (acelasi remove_player + broadcast ca la
+    WebSocketDisconnect mai jos). Complementar sistemului de lifecycle
+    (ON_STOP/ON_START) din client, care opreste heartbeat-ul cand aplicatia
+    trece in fundal - deci "fara heartbeat" acopera si cazul de fundal, si
+    pierderea reala de retea/proces omorat brutal, cu acelasi mecanism."""
+    try:
+        while True:
+            await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)
+            room = game_manager.get_room(room_code)
+            if room is None:
+                return
+
+            now = time.time()
+            heartbeats = last_heartbeat_at.get(room_code, {})
+            stale_player_ids = [
+                pid for pid, ws in list(active_connections.get(room_code, {}).items())
+                if now - heartbeats.get(pid, now) > HEARTBEAT_TIMEOUT_SECONDS
+            ]
+
+            for pid in stale_player_ids:
+                ws = active_connections.get(room_code, {}).pop(pid, None)
+                last_heartbeat_at.get(room_code, {}).pop(pid, None)
+                if ws is not None:
+                    try:
+                        await ws.close(code=1000, reason="Heartbeat timeout")
+                    except Exception:
+                        pass
+                game_manager.remove_player(room_code, pid)
+                await broadcast_to_room(room_code, {
+                    "type": "player_disconnected",
+                    "playerId": pid
+                })
+                await broadcast_lobby_update(room_code)
+    finally:
+        _heartbeat_watchers.discard(room_code)
+
+
 async def _sos_watcher(room_code: str):
     """Task de fundal pornit la primul SOS trimis cu succes: asteapta pana
     expira SOS_CIA_ARRIVAL_SECONDS (2 minute, INVIZIBIL pentru toti jucatorii
@@ -191,6 +247,16 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
     if room_code not in active_connections:
         active_connections[room_code] = {}
     active_connections[room_code][player_id] = websocket
+
+    # Initializam heartbeat-ul acestui jucator la momentul conectarii, ca sa
+    # nu fie deconectat instant de _heartbeat_watcher inainte sa apuce sa
+    # trimita primul semnal (clientul trimite abia dupa HEARTBEAT_INTERVAL_SECONDS).
+    if room_code not in last_heartbeat_at:
+        last_heartbeat_at[room_code] = {}
+    last_heartbeat_at[room_code][player_id] = time.time()
+    if room_code not in _heartbeat_watchers:
+        _heartbeat_watchers.add(room_code)
+        asyncio.create_task(_heartbeat_watcher(room_code))
 
     # Daca jucatorul exista deja in camera (reconectare dupa ce a fost
     # marcat disconnected=True la iesirea din aplicatie), il marcam din nou
@@ -259,6 +325,13 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
                 continue
 
             action = data.get("action")
+
+            if action == "heartbeat":
+                # Doar actualizam timestamp-ul - nu trimitem niciun raspuns,
+                # ca sa nu incarcam degeaba traficul (_heartbeat_watcher
+                # verifica periodic, nu are nevoie de confirmare per-mesaj).
+                last_heartbeat_at.setdefault(room_code, {})[player_id] = time.time()
+                continue
 
             if action == "move":
                 target_room_id = data.get("targetRoomId", "")
@@ -795,6 +868,8 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
             del active_connections[room_code][player_id]
         if room_code in last_positions and player_id in last_positions[room_code]:
             del last_positions[room_code][player_id]
+        if room_code in last_heartbeat_at and player_id in last_heartbeat_at[room_code]:
+            del last_heartbeat_at[room_code][player_id]
 
         # Daca nu mai ramane niciun jucator conectat in camera (fie in LOBBY,
         # fie in timpul meciului), stergem camera automat - nu ramane nimic
@@ -803,6 +878,7 @@ async def websocket_endpoint(websocket: WebSocket, room_code: str, player_id: st
             game_manager.rooms.pop(room_code, None)
             active_connections.pop(room_code, None)
             last_positions.pop(room_code, None)
+            last_heartbeat_at.pop(room_code, None)
             return
 
         await broadcast_to_room(room_code, {
