@@ -157,6 +157,26 @@ class GameViewModel : ViewModel() {
         networkClient?.sendSetFbiTaskCount(count)
     }
 
+    // Cate intalniri de urgenta (buton, fara raportare de corp) are voie sa
+    // cheme FIECARE jucator, per runda (setare de host, in LOBBY, 0-5).
+    // Implicit 1. Aceeasi mecanica optimista ca la spyTaskCount/fbiTaskCount.
+    private val _emergencyMeetingsPerPlayer = mutableStateOf(1)
+    val emergencyMeetingsPerPlayer: State<Int> = _emergencyMeetingsPerPlayer
+
+    fun setEmergencyMeetingsPerPlayer(count: Int) {
+        networkClient?.sendSetEmergencyMeetingsPerPlayer(count)
+    }
+
+    /** Cate intalniri de urgenta a mai folosit EU (localPlayerId) in runda
+     * curenta - crescut optimist la apel, la fel ca alte contoare locale.
+     * Folosit pentru a dezactiva vizual butonul cand am epuizat limita. */
+    private val _emergencyMeetingsUsedByMe = mutableStateOf(0)
+    val emergencyMeetingsUsedByMe: State<Int> = _emergencyMeetingsUsedByMe
+
+    fun callEmergencyMeeting() {
+        networkClient?.sendCallEmergencyMeeting()
+    }
+
     // Task-urile alocate SPIONULUI in runda curenta - gol daca esti agent FBI (nu
     // primesti niciodata acest eveniment) sau daca jocul nu a inceput inca.
     val spyTasks = mutableStateListOf<SpyTaskInfo>()
@@ -394,6 +414,8 @@ class GameViewModel : ViewModel() {
         _roomIsPrivate.value = false
         _spyTaskCount.value = 5
         _fbiTaskCount.value = 3
+        _emergencyMeetingsPerPlayer.value = 1
+        _emergencyMeetingsUsedByMe.value = 0
         _gameOverWinner.value = null
         _activeMeeting.value = null
         _meetingResult.value = null
@@ -437,6 +459,8 @@ class GameViewModel : ViewModel() {
         _localPlayerY.value = BuildingLayout.START_Y
         _spyTaskCount.value = 5
         _fbiTaskCount.value = 3
+        _emergencyMeetingsPerPlayer.value = 1
+        _emergencyMeetingsUsedByMe.value = 0
         _gameOverWinner.value = null
         _activeMeeting.value = null
         _meetingResult.value = null
@@ -695,6 +719,9 @@ class GameViewModel : ViewModel() {
             is ServerEvent.FbiTaskCountChanged -> {
                 _fbiTaskCount.value = event.count
             }
+            is ServerEvent.EmergencyMeetingsPerPlayerChanged -> {
+                _emergencyMeetingsPerPlayer.value = event.count
+            }
             is ServerEvent.SpyTaskUpdated -> {
                 val index = spyTasks.indexOfFirst { it.id == event.taskId }
                 if (index >= 0) {
@@ -820,6 +847,13 @@ class GameViewModel : ViewModel() {
                     durationSeconds = event.durationSeconds,
                     startedAtMillis = System.currentTimeMillis()
                 )
+                // Daca urgenta asta am chemat-o EU, crestem local contorul de
+                // folosiri - server-ul e sursa de adevar (ne-ar respinge oricum
+                // cererea daca am gresi calculul), dar asta face butonul sa se
+                // dezactiveze vizual instant, fara sa astepti un round-trip.
+                if (event.reason == "EMERGENCY_BUTTON" && event.reporterId == _localPlayerId.value) {
+                    _emergencyMeetingsUsedByMe.value += 1
+                }
             }
             is ServerEvent.VoteCast -> {
                 if (!playersWhoVoted.contains(event.voterId)) {
@@ -846,6 +880,7 @@ class GameViewModel : ViewModel() {
                 }
                 event.spyTaskCount?.let { _spyTaskCount.value = it }
                 event.fbiTaskCount?.let { _fbiTaskCount.value = it }
+                event.emergencyMeetingsPerPlayer?.let { _emergencyMeetingsPerPlayer.value = it }
             }
             is ServerEvent.YouWereKicked -> {
                 _removalReason.value = RemovalReason.KICKED
