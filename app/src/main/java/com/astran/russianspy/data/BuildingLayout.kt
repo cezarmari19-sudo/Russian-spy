@@ -93,4 +93,11 @@ object BuildingLayout {
     // care jucatorii sunt tele-portati automat cand incepe un meeting.
     const val EMERGENCY_BUTTON_X = 2250f
     const val EMERGENCY_BUTTON_Y = 1500f
+
+    // Pozitia FIXA a statiei radio din camera de Comunicatii (comms), unde
+    // agentii FBI deblocati acceseaza ecranul SOS Morse - punct unic, langa
+    // peretele din DREAPTA-SUS (opus intrarii, care e prin peretele din
+    // stanga). La fel ca masina de laborator sau statia din Arhiva ADN.
+    const val COMMS_STATION_X = 3655f
+    const val COMMS_STATION_Y = 2087f
 }
