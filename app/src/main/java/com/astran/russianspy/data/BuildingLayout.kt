@@ -68,4 +68,16 @@ object BuildingLayout {
     const val SURVEILLANCE_MONITOR_X = 640f
     const val SURVEILLANCE_MONITOR_Y = 1112f
     const val MONITOR_INTERACT_RADIUS = 70f
+
+    // Banda de interactiune de la peretele de SUS al Morgii - spre deosebire de
+    // monitorul de supraveghere sau masina de laborator (puncte fixe unice),
+    // aici ORICE pozitie de-a lungul intregului perete de sus e valida (model
+    // lung de aparate care tin corpurile, plasat pe tot peretele). Jucatorul
+    // trebuie sa fie cu X-ul in intervalul [MORGUE_WALL_X_MIN, MORGUE_WALL_X_MAX]
+    // SI suficient de aproape de perete pe verticala (sub MORGUE_WALL_DEPTH fata
+    // de Y-ul peretelui).
+    const val MORGUE_WALL_X_MIN = 400f
+    const val MORGUE_WALL_X_MAX = 750f
+    const val MORGUE_WALL_Y = 150f
+    const val MORGUE_WALL_DEPTH = 90f
 }
