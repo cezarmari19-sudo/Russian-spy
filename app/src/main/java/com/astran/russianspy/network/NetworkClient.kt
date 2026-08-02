@@ -2,6 +2,9 @@ package com.astran.russianspy.network
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.*
 import org.json.JSONObject
@@ -228,6 +231,34 @@ class NetworkClient(
 
     private var webSocket: WebSocket? = null
 
+    // Scope propriu pentru heartbeat - separat de orice ViewModelScope, ca sa
+    // putem porni/opri heartbeat-ul exact la connectWebSocket/disconnect,
+    // indiferent de ciclul de viata al ViewModel-ului care detine acest client.
+    private val heartbeatScope = CoroutineScope(Dispatchers.IO)
+    private var heartbeatJob: Job? = null
+    private val HEARTBEAT_INTERVAL_MILLIS = 2000L
+
+    /** Porneste trimiterea unui heartbeat la fiecare 2 secunde CAT TIMP
+     * WebSocket-ul e deschis - serverul deconecteaza automat un jucator daca
+     * rateaza ~2 heartbeat-uri consecutive (vezi HEARTBEAT_TIMEOUT_SECONDS in
+     * server/main.py). Apelat automat din connectWebSocket; oprit automat din
+     * disconnect(), ca sa nu ramana o coroutine "agatata" trimitand heartbeat
+     * dupa ce clientul a plecat intentionat din camera. */
+    private fun startHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = heartbeatScope.launch {
+            while (isActive) {
+                delay(HEARTBEAT_INTERVAL_MILLIS)
+                send(JSONObject().apply { put("action", "heartbeat") })
+            }
+        }
+    }
+
+    private fun stopHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+    }
+
     fun createRoom(playerId: String, playerName: String, accountId: String? = null, onResult: (roomCode: String?, error: String?) -> Unit) {
         val accountParam = if (accountId != null) "&account_id=$accountId" else ""
         val url = "${ServerConfig.HTTP_BASE}/create_room?player_id=$playerId&player_name=${playerName}$accountParam"
@@ -345,6 +376,7 @@ class NetworkClient(
                 onEvent(ServerEvent.Error("Conexiune pierduta: ${t.message}"))
             }
         })
+        startHeartbeat()
     }
 
     private fun handleIncomingMessage(text: String) {
@@ -881,6 +913,7 @@ class NetworkClient(
     }
 
     fun disconnect() {
+        stopHeartbeat()
         webSocket?.close(1000, "Client disconnect")
         webSocket = null
     }
