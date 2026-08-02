@@ -158,6 +158,11 @@ class Player:
     # la intrarea in lobby - stil Among Us. Folosita ca sa identificam vizual
     # mostrele de ADN de referinta fara sa dezvaluim numele/rolul jucatorului.
     color: str = "#9E9E9E"
+    # Cate intalniri de urgenta (buton, fara raportare de corp) a chemat DEJA
+    # acest jucator in runda curenta - resetat la 0 la fiecare start_game().
+    # Comparat cu room.emergency_meetings_per_player ca sa stim daca mai are
+    # voie sa apese butonul.
+    emergency_meetings_used: int = 0
 
     def to_dict(self, reveal_role: bool = False):
         return {
@@ -333,10 +338,12 @@ class IntelMessage:
 
 @dataclass
 class Meeting:
-    """O intalnire de urgenta (chemata prin raportarea unui corp), stil Among
-    Us: toti jucatorii vii sunt adusi in meeting_room, au un timp fix de vot,
-    apoi jucatorul cel mai votat e exclus (majoritate simpla - daca e egalitate,
-    inclusiv egalitate cu numarul de skip-uri, nimeni nu e exclus)."""
+    """O intalnire de urgenta, stil Among Us: toti jucatorii vii sunt adusi in
+    meeting_room, au un timp fix de vot, apoi jucatorul cel mai votat e exclus
+    (majoritate simpla - daca e egalitate, inclusiv egalitate cu numarul de
+    skip-uri, nimeni nu e exclus). Poate fi chemata in 2 moduri: raportarea
+    unui corp gasit (is_emergency=False) sau apasarea directa a butonului de
+    urgenta, fara sa fie nevoie de un corp (is_emergency=True)."""
     started_at_millis: float
     duration_seconds: float = 75.0
     # player_id -> target_player_id votat, sau None daca a votat explicit "skip".
@@ -345,6 +352,7 @@ class Meeting:
     reporter_id: str = ""
     reporter_name: str = ""
     resolved: bool = False
+    is_emergency: bool = False
 
     def to_dict(self, remaining_seconds: float):
         return {
@@ -354,6 +362,7 @@ class Meeting:
             "reporterId": self.reporter_id,
             "reporterName": self.reporter_name,
             "votedPlayerIds": list(self.votes.keys()),
+            "isEmergency": self.is_emergency,
         }
 
 
@@ -558,6 +567,11 @@ class GameRoom:
     # Cate task-uri FBI primeste FIECARE agent FBI in parte - configurabil de
     # host din setarile camerei, INAINTE ca jocul sa inceapa (1-10). Implicit 3.
     fbi_task_count: int = 3
+    # Cate intalniri de urgenta (buton, fara raportare de corp) are voie sa
+    # cheme FIECARE jucator, per runda - configurabil de host din setarile
+    # camerei (0-5), la fel ca spy_task_count/fbi_task_count. 0 = dezactivat
+    # complet, doar raportarea de cadavre mai poate porni o intalnire.
+    emergency_meetings_per_player: int = 1
     # Cele doua sloturi ale "masinii de comparare ADN" din laboratorul
     # criminalistic: id-ul mostrei recoltate (de pe un corp) si id-ul mostrei
     # de referinta (din arhiva), daca sunt puse. Un singur slot din fiecare
