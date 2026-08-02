@@ -915,6 +915,7 @@ private fun LobbySettingsDialog(viewModel: GameViewModel, onDismiss: () -> Unit)
     val isUpdating by viewModel.roomPrivacyUpdating
     val spyTaskCount by viewModel.spyTaskCount
     val fbiTaskCount by viewModel.fbiTaskCount
+    val emergencyMeetingsPerPlayer by viewModel.emergencyMeetingsPerPlayer
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1007,6 +1008,32 @@ private fun LobbySettingsDialog(viewModel: GameViewModel, onDismiss: () -> Unit)
                     onValueChangeFinished = { viewModel.setFbiTaskCount(fbiSliderPos.toInt()) },
                     valueRange = 1f..20f,
                     steps = 18,
+                    colors = SliderDefaults.colors(
+                        thumbColor = TacticalColors.Accent,
+                        activeTrackColor = TacticalColors.Accent
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Intalniri de urgenta (per jucator): $emergencyMeetingsPerPlayer",
+                    color = TacticalColors.TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+                Text(
+                    text = "Cate ori poate suna FIECARE jucator o intalnire de urgenta, fara sa gaseasca un corp. 0 = dezactivat.",
+                    color = TacticalColors.TextSecondary,
+                    fontSize = 12.sp
+                )
+                var emergencySliderPos by remember(emergencyMeetingsPerPlayer) { mutableStateOf(emergencyMeetingsPerPlayer.toFloat()) }
+                Slider(
+                    value = emergencySliderPos,
+                    onValueChange = { emergencySliderPos = it },
+                    onValueChangeFinished = { viewModel.setEmergencyMeetingsPerPlayer(emergencySliderPos.toInt()) },
+                    valueRange = 0f..5f,
+                    steps = 4,
                     colors = SliderDefaults.colors(
                         thumbColor = TacticalColors.Accent,
                         activeTrackColor = TacticalColors.Accent
