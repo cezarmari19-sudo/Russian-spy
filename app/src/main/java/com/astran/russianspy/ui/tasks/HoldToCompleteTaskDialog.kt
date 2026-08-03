@@ -12,8 +12,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -64,7 +66,10 @@ fun HoldToCompleteTaskDialog(
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color(0xE6000000)) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -2824,7 +2829,6 @@ private fun LogEvidenceChainMinigame(
         )
     }
 }
-
 // ---------------------------------------------------------------------------
 // 29) PATROL_CAMERA_FEED (~4s) - "Spot the glitch": gaseste feed-ul cu semnal
 //     anormal printre altele, de cateva ori.
@@ -3542,7 +3546,6 @@ private fun BriefTheTeamMinigame(
         }
     }
 }
-
 // ---------------------------------------------------------------------------
 // 38) SECURE_PERIMETER (~5s) - "Check each post": apasa punctele de control
 //     in ordine, fara sa ratezi vreunul.
