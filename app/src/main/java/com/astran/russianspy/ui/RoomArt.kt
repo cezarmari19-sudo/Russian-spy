@@ -1247,3 +1247,403 @@ fun DrawScope.drawForensicsLabDetailed(w: Float, h: Float) {
 
     drawRoomVignette(w, h)
 }
+
+
+// ============================================================================
+// MONITORIZARE COMUNICATII - statie radio/satelit, tehnica, tensionata
+// ============================================================================
+
+/**
+ * Geometrie reala: camera "comms" e x:3400-3700, y:2050-2300 (300x250). Acces:
+ * hall_comms intra prin peretele STANG, pe y:2125-2225 (local y: 75-175,
+ * adica centrul vertical) -> acea zona ramane libera. Statia radio (punctul
+ * real de interactiune, COMMS_STATION_X/Y) e in coltul DREAPTA-SUS, opus
+ * intrarii.
+ */
+fun DrawScope.drawCommsRoomDetailed(w: Float, h: Float) {
+    // Podeaua: gri-inchis cu tenta verzuie tehnica, ca un centru de monitorizare.
+    drawRect(color = Color(0xFF101512), topLeft = Offset.Zero, size = Size(w, h))
+    drawFloorGrid(w, h, cell = w / 9f)
+
+    val radarGreen = Color(0xFF4CD97A)
+    val radarGreenDim = Color(0xFF1F6B3D)
+
+    // --- Statia radio principala, coltul DREAPTA-SUS (punctul real de interactiune) ---
+    val stationW = w * 0.30f
+    val stationH = h * 0.34f
+    val stationLeft = w * 0.66f
+    val stationTop = h * 0.05f
+
+    drawRect(
+        color = Color.Black.copy(alpha = 0.35f),
+        topLeft = Offset(stationLeft - 2f, stationTop + stationH),
+        size = Size(stationW + 4f, h * 0.02f)
+    )
+    solidRect(Offset(stationLeft, stationTop), Size(stationW, stationH), RoomTheme.metalDark)
+    // Ecranul principal - waveform simplu (linie in zig-zag), ca un osciloscop.
+    val screenPad = stationW * 0.1f
+    val screenTop = stationTop + screenPad
+    val screenW = stationW - screenPad * 2f
+    val screenH = stationH * 0.42f
+    drawRect(
+        color = radarGreenDim.copy(alpha = 0.55f),
+        topLeft = Offset(stationLeft + screenPad, screenTop),
+        size = Size(screenW, screenH)
+    )
+    val waveSegments = 8
+    for (i in 0 until waveSegments) {
+        val x1 = stationLeft + screenPad + screenW * (i / waveSegments.toFloat())
+        val x2 = stationLeft + screenPad + screenW * ((i + 1) / waveSegments.toFloat())
+        val y1 = screenTop + screenH * (0.5f + (if (i % 2 == 0) -0.25f else 0.25f))
+        val y2 = screenTop + screenH * (0.5f + (if (i % 2 == 0) 0.25f else -0.25f))
+        drawLine(radarGreen, Offset(x1, y1), Offset(x2, y2), strokeWidth = 2f)
+    }
+    // Randuri de butoane/LED-uri sub ecran.
+    for (row in 0..1) {
+        for (col in 0..3) {
+            drawCircle(
+                color = if ((row + col) % 3 == 0) radarGreen.copy(alpha = 0.8f) else RoomTheme.metalLight,
+                radius = stationW * 0.025f,
+                center = Offset(
+                    stationLeft + screenPad + screenW * (col + 0.5f) / 4f,
+                    stationTop + stationH * (0.65f + row * 0.14f)
+                )
+            )
+        }
+    }
+    // Glow verde in jurul statiei - sursa principala de lumina.
+    drawRect(
+        brush = Brush.radialGradient(
+            colors = listOf(radarGreen.copy(alpha = 0.16f), Color.Transparent),
+            center = Offset(stationLeft + stationW / 2f, stationTop + stationH * 0.4f),
+            radius = stationW * 1.7f
+        ),
+        topLeft = Offset(stationLeft - stationW * 0.5f, stationTop - stationH * 0.4f),
+        size = Size(stationW * 2f, stationH * 1.8f)
+    )
+
+    // --- Antena/satelit, colt STANGA-SUS (departe de acces, care e centrul stang) ---
+    val antennaBaseX = w * 0.14f
+    val antennaBaseY = h * 0.10f
+    val antennaHeight = h * 0.22f
+    drawLine(
+        RoomTheme.metalLight,
+        Offset(antennaBaseX, antennaBaseY + antennaHeight),
+        Offset(antennaBaseX, antennaBaseY),
+        strokeWidth = 4f
+    )
+    // Farfuria satelit (arc simplu, ca o jumatate de elipsa).
+    drawArc(
+        color = RoomTheme.metalLight,
+        startAngle = 200f,
+        sweepAngle = 140f,
+        useCenter = false,
+        topLeft = Offset(antennaBaseX - w * 0.06f, antennaBaseY - h * 0.02f),
+        size = Size(w * 0.12f, h * 0.10f),
+        style = Stroke(width = 3f)
+    )
+    drawCircle(radarGreen.copy(alpha = 0.9f), radius = 3f, center = Offset(antennaBaseX, antennaBaseY))
+
+    // --- Harta/panou cu semnale interceptate, jos-centru (zona libera) ---
+    val panelW = w * 0.42f
+    val panelH = h * 0.30f
+    val panelLeft = w * 0.30f
+    val panelTop = h * 0.62f
+
+    drawRect(
+        color = Color.Black.copy(alpha = 0.3f),
+        topLeft = Offset(panelLeft - 2f, panelTop + panelH),
+        size = Size(panelW + 4f, h * 0.015f)
+    )
+    solidRect(Offset(panelLeft, panelTop), Size(panelW, panelH), RoomTheme.metalDarker)
+    // Cateva "puncte de semnal" pe panou, ca un radar simplificat.
+    val signalPoints = listOf(0.2f to 0.3f, 0.5f to 0.6f, 0.75f to 0.35f, 0.35f to 0.75f)
+    signalPoints.forEachIndexed { idx, (fx, fy) ->
+        drawCircle(
+            color = radarGreen.copy(alpha = if (idx == 0) 0.9f else 0.5f),
+            radius = if (idx == 0) 4f else 2.5f,
+            center = Offset(panelLeft + panelW * fx, panelTop + panelH * fy)
+        )
+    }
+    drawRect(
+        color = RoomTheme.objectOutline,
+        topLeft = Offset(panelLeft, panelTop),
+        size = Size(panelW, panelH),
+        style = Stroke(width = 1.5f)
+    )
+
+    drawRoomVignette(w, h)
+}
+
+// ============================================================================
+// INTRARE - hol oficial de acces, prima impresie a cladirii
+// ============================================================================
+
+/**
+ * Geometrie reala: camera "entrance" e x:2150-2350, y:2850-3050 (200x200).
+ * Acces: hall_entrance intra prin peretele de SUS, pe x:2200-2300 (local x:
+ * 50-150, adica centrul orizontal) -> acea zona ramane libera. Camera de
+ * start a jocului (START_X/START_Y) - trebuie sa para institutionala, oficiala.
+ */
+fun DrawScope.drawEntranceRoomDetailed(w: Float, h: Float) {
+    // Podeaua: gri neutru, mai deschis decat restul cladirii - un hol de primire.
+    drawRect(color = Color(0xFF1C1E20), topLeft = Offset.Zero, size = Size(w, h))
+    drawFloorGrid(w, h, cell = w / 7f)
+
+    // --- Covor central, de la intrare pana spre birou (zona centrala, sigura) ---
+    val carpetW = w * 0.3f
+    val carpetLeft = (w - carpetW) / 2f
+    drawRect(
+        color = Color(0xFF3A2E24).copy(alpha = 0.55f),
+        topLeft = Offset(carpetLeft, h * 0.12f),
+        size = Size(carpetW, h * 0.5f)
+    )
+
+    // --- Birou de paza, lipit de peretele din STANGA (zona libera fata de acces) ---
+    val deskW = w * 0.22f
+    val deskH = h * 0.30f
+    val deskLeft = w * 0.06f
+    val deskTop = h * 0.55f
+
+    drawRect(
+        color = Color.Black.copy(alpha = 0.3f),
+        topLeft = Offset(deskLeft - 2f, deskTop + deskH),
+        size = Size(deskW + 4f, h * 0.02f)
+    )
+    solidRect(Offset(deskLeft, deskTop), Size(deskW, deskH), RoomTheme.metalLight)
+    // Un mic monitor pe birou.
+    drawRect(
+        color = RoomTheme.screenGlowGreenDim.copy(alpha = 0.6f),
+        topLeft = Offset(deskLeft + deskW * 0.55f, deskTop - deskH * 0.35f),
+        size = Size(deskW * 0.35f, deskH * 0.3f)
+    )
+
+    // --- Panou de acces (badge reader) langa peretele din DREAPTA ---
+    val panelW = w * 0.08f
+    val panelH = h * 0.16f
+    val panelLeft = w * 0.88f
+    val panelTop = h * 0.40f
+    solidRect(Offset(panelLeft, panelTop), Size(panelW, panelH), RoomTheme.metalDark)
+    drawRect(
+        color = RoomTheme.accentWarm.copy(alpha = 0.5f),
+        topLeft = Offset(panelLeft + panelW * 0.2f, panelTop + panelH * 0.2f),
+        size = Size(panelW * 0.6f, panelH * 0.25f)
+    )
+    drawCircle(RoomTheme.accentWarm, radius = 2f, center = Offset(panelLeft + panelW * 0.5f, panelTop + panelH * 0.65f))
+
+    // --- Steag/insigna pe perete, jos-centru-dreapta (decor institutional) ---
+    val flagW = w * 0.06f
+    val flagH = h * 0.22f
+    val flagLeft = w * 0.72f
+    val flagTop = h * 0.62f
+    drawLine(
+        RoomTheme.metalLight,
+        Offset(flagLeft, flagTop),
+        Offset(flagLeft, flagTop + flagH),
+        strokeWidth = 2f
+    )
+    drawRect(
+        color = Color(0xFF5A2A2A).copy(alpha = 0.7f),
+        topLeft = Offset(flagLeft, flagTop),
+        size = Size(flagW, flagH * 0.5f)
+    )
+
+    // --- Banca de asteptare, jos-stanga-centru (zona libera) ---
+    val benchW = w * 0.20f
+    val benchH = h * 0.05f
+    val benchLeft = w * 0.22f
+    val benchTop = h * 0.82f
+    drawRect(
+        color = Color.Black.copy(alpha = 0.25f),
+        topLeft = Offset(benchLeft - 2f, benchTop + benchH),
+        size = Size(benchW + 4f, h * 0.01f)
+    )
+    solidRect(Offset(benchLeft, benchTop), Size(benchW, benchH), RoomTheme.fabricDark)
+
+    drawRoomVignette(w, h)
+}
+
+// ============================================================================
+// MORGA - refrigeratoare metalice, atmosfera rece si clinica
+// ============================================================================
+
+/**
+ * Geometrie reala: camera "morgue" e x:400-750, y:150-400 (350x250). Acces:
+ * hall_morgue intra prin peretele de JOS, pe x:525-625 (local x: 125-225,
+ * centrul orizontal) -> acea zona ramane libera. Banda de interactiune
+ * (MORGUE_WALL_X_MIN..MAX, MORGUE_WALL_Y + DEPTH) e chiar pe peretele de SUS -
+ * de aceea sirul de refrigeratoare (sertare pentru cadavre) e desenat acolo,
+ * ocupand toata latimea, ca sa coincida vizual cu zona apasabila intreaga.
+ */
+fun DrawScope.drawMorgueRoomDetailed(w: Float, h: Float) {
+    // Podeaua: gri-verzui rece, aproape steril - clinic, dezolant.
+    drawRect(color = Color(0xFF161C1A), topLeft = Offset.Zero, size = Size(w, h))
+    drawFloorGrid(w, h, cell = w / 10f)
+
+    val coldGlow = Color(0xFF6FA8A0)
+
+    // --- Sirul de refrigeratoare, TOT peretele de SUS (banda de interactiune) ---
+    val drawerCount = 6
+    val drawerGap = w * 0.012f
+    val drawersLeft = w * 0.04f
+    val drawersWidth = w * 0.92f
+    val drawerWidth = (drawersWidth - drawerGap * (drawerCount - 1)) / drawerCount
+    val drawerHeight = h * 0.24f
+    val drawerTop = h * 0.02f
+
+    for (i in 0 until drawerCount) {
+        val dx = drawersLeft + i * (drawerWidth + drawerGap)
+        solidRect(Offset(dx, drawerTop), Size(drawerWidth, drawerHeight), RoomTheme.metalLight)
+        // Maner orizontal.
+        drawRect(
+            color = RoomTheme.metalDarker,
+            topLeft = Offset(dx + drawerWidth * 0.15f, drawerTop + drawerHeight * 0.75f),
+            size = Size(drawerWidth * 0.7f, drawerHeight * 0.08f)
+        )
+        // Eticheta mica, alb-albastruie rece pe fiecare sertar.
+        drawRect(
+            color = coldGlow.copy(alpha = 0.35f),
+            topLeft = Offset(dx + drawerWidth * 0.15f, drawerTop + drawerHeight * 0.2f),
+            size = Size(drawerWidth * 0.3f, drawerHeight * 0.15f)
+        )
+    }
+    // Glow rece, difuz, de-a lungul intregului perete de sus.
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(coldGlow.copy(alpha = 0.10f), Color.Transparent)
+        ),
+        topLeft = Offset(0f, 0f),
+        size = Size(w, h * 0.4f)
+    )
+
+    // --- Masa de autopsie metalica, centrul camerei (zona libera) ---
+    val tableW = w * 0.30f
+    val tableH = h * 0.14f
+    val tableLeft = (w - tableW) / 2f
+    val tableTop = h * 0.55f
+
+    drawRect(
+        color = Color.Black.copy(alpha = 0.35f),
+        topLeft = Offset(tableLeft - 2f, tableTop + tableH),
+        size = Size(tableW + 4f, h * 0.02f)
+    )
+    solidRect(Offset(tableLeft, tableTop), Size(tableW, tableH), RoomTheme.metalLight)
+    // Canal de scurgere pe mijlocul mesei (linie subtire).
+    drawLine(
+        RoomTheme.objectOutline,
+        Offset(tableLeft + tableW * 0.5f, tableTop + tableH * 0.15f),
+        Offset(tableLeft + tableW * 0.5f, tableTop + tableH * 0.85f),
+        strokeWidth = 2f
+    )
+    // Picioarele mesei (2 linii subtiri verticale).
+    drawLine(RoomTheme.metalDark, Offset(tableLeft + tableW * 0.1f, tableTop + tableH), Offset(tableLeft + tableW * 0.1f, tableTop + tableH + h * 0.05f), strokeWidth = 3f)
+    drawLine(RoomTheme.metalDark, Offset(tableLeft + tableW * 0.9f, tableTop + tableH), Offset(tableLeft + tableW * 0.9f, tableTop + tableH + h * 0.05f), strokeWidth = 3f)
+
+    // --- Carucior cu instrumente, jos-dreapta (zona libera de acces) ---
+    val cartW = w * 0.10f
+    val cartH = h * 0.10f
+    val cartLeft = w * 0.80f
+    val cartTop = h * 0.80f
+    solidRect(Offset(cartLeft, cartTop), Size(cartW, cartH), RoomTheme.metalDarker)
+    drawCircle(coldGlow.copy(alpha = 0.6f), radius = cartW * 0.1f, center = Offset(cartLeft + cartW * 0.3f, cartTop + cartH * 0.3f))
+    drawCircle(RoomTheme.accentWarm.copy(alpha = 0.5f), radius = cartW * 0.1f, center = Offset(cartLeft + cartW * 0.7f, cartTop + cartH * 0.3f))
+
+    drawRoomVignette(w, h)
+}
+
+// ============================================================================
+// ARHIVA ADN - rafturi de dosare si probe, atmosfera de arhiva veche
+// ============================================================================
+
+/**
+ * Geometrie reala: camera "dna_archive" e x:50-350, y:150-400 (300x250).
+ * Acces: hall_dna_archive intra prin peretele din DREAPTA, pe y:200-350
+ * (local y: 50-200, centrul vertical) -> acea zona ramane libera. Statia de
+ * arhivare (punctul real de interactiune, DNA_ARCHIVE_STATION_X/Y) e langa
+ * peretele din STANGA, opus intrarii.
+ */
+fun DrawScope.drawDnaArchiveRoomDetailed(w: Float, h: Float) {
+    // Podeaua: albastru-inchis prafuit, tenta de arhiva veche.
+    drawRect(color = Color(0xFF14181F), topLeft = Offset.Zero, size = Size(w, h))
+    drawFloorGrid(w, h, cell = w / 9f)
+
+    val archiveBlue = Color(0xFF4A7FB5)
+
+    // --- Statia de arhivare, langa peretele STANGA (punctul real de interactiune) ---
+    val stationW = w * 0.20f
+    val stationH = h * 0.30f
+    val stationLeft = w * 0.05f
+    val stationTop = h * 0.32f
+
+    drawRect(
+        color = Color.Black.copy(alpha = 0.35f),
+        topLeft = Offset(stationLeft - 2f, stationTop + stationH),
+        size = Size(stationW + 4f, h * 0.02f)
+    )
+    solidRect(Offset(stationLeft, stationTop), Size(stationW, stationH), RoomTheme.metalDark)
+    val screenPad = stationW * 0.14f
+    drawRect(
+        color = archiveBlue.copy(alpha = 0.4f),
+        topLeft = Offset(stationLeft + screenPad, stationTop + screenPad),
+        size = Size(stationW - screenPad * 2f, stationH * 0.4f)
+    )
+    // Fanta pentru introducerea probei.
+    drawRect(
+        color = RoomTheme.metalDarker,
+        topLeft = Offset(stationLeft + screenPad, stationTop + stationH * 0.6f),
+        size = Size(stationW - screenPad * 2f, stationH * 0.12f)
+    )
+    drawRect(
+        brush = Brush.radialGradient(
+            colors = listOf(archiveBlue.copy(alpha = 0.16f), Color.Transparent),
+            center = Offset(stationLeft + stationW / 2f, stationTop + stationH * 0.35f),
+            radius = stationW * 1.8f
+        ),
+        topLeft = Offset(stationLeft - stationW * 0.7f, stationTop - stationH * 0.5f),
+        size = Size(stationW * 2.4f, stationH * 2f)
+    )
+
+    // --- Rafturi cu dosare, TOT peretele de SUS (zona clar libera) ---
+    val shelfW = w * 0.9f
+    val shelfLeft = w * 0.05f
+    val shelfH = h * 0.10f
+    for (row in 0..1) {
+        val shelfTop = h * (0.04f + row * 0.14f)
+        solidRect(Offset(shelfLeft, shelfTop), Size(shelfW, shelfH), RoomTheme.metalDarker)
+        // Dosare colorate, cate unul la fiecare "compartiment".
+        val fileColors = listOf(Color(0xFF8B4A2E), archiveBlue, Color(0xFF6B7A3A), RoomTheme.accentWarm)
+        val fileCount = 10
+        for (i in 0 until fileCount) {
+            val fx = shelfLeft + shelfW * (i + 0.5f) / fileCount
+            drawRect(
+                color = fileColors[i % fileColors.size].copy(alpha = 0.7f),
+                topLeft = Offset(fx - shelfW * 0.02f, shelfTop + shelfH * 0.1f),
+                size = Size(shelfW * 0.04f, shelfH * 0.8f)
+            )
+        }
+    }
+
+    // --- Masuta cu proba sub catalogare, jos-centru-dreapta (zona libera) ---
+    val tableRadius = w * 0.08f
+    val tableCenterX = w * 0.62f
+    val tableCenterY = h * 0.78f
+    drawCircle(
+        color = Color.Black.copy(alpha = 0.3f),
+        radius = tableRadius * 1.05f,
+        center = Offset(tableCenterX, tableCenterY + tableRadius * 0.12f)
+    )
+    drawCircle(color = RoomTheme.metalDark, radius = tableRadius, center = Offset(tableCenterX, tableCenterY))
+    drawCircle(
+        color = RoomTheme.objectOutline,
+        radius = tableRadius,
+        center = Offset(tableCenterX, tableCenterY),
+        style = Stroke(width = 2f)
+    )
+    drawRect(
+        color = archiveBlue.copy(alpha = 0.35f),
+        topLeft = Offset(tableCenterX - tableRadius * 0.35f, tableCenterY - tableRadius * 0.2f),
+        size = Size(tableRadius * 0.7f, tableRadius * 0.4f)
+    )
+
+    drawRoomVignette(w, h)
+}
